@@ -16,13 +16,19 @@ Suggested order: **plan.MD** for the case and constraints, then **CUJS.md** for 
 
 Three thin adapters — CLI, IDE tasks, Git hooks — call into one shared, deterministic engine. Assistant output (plan/proposal) is always re-validated by that deterministic core before anything is written or reported; nothing mutates a tracked file until a human explicitly approves it.
 
-## Quickstart (once implemented)
+## Quickstart
 
 ```bash
-uv sync --frozen
+uv sync
 uv run contrib-pilot doctor
-uv run contrib-pilot demo reset
-uv run contrib-pilot run demo/issue.md --provider fixture
+uv run contrib-pilot demo reset          # regenerates demo/workspace/ from demo/fixture/
+cd demo/workspace
+uv run --project ../.. contrib-pilot run ../issue.md --provider fixture
 ```
+
+`run` pauses once for approval before applying the proposed patch; confirm
+`y` to continue through validate/review/report. Run `uv run --project ../.. contrib-pilot report`
+afterward to reopen the generated report, or `... run ../issue.md --resume`
+to continue an interrupted run.
 
 See CUJS.md's Developer Quickstart for the full clone-to-PR flow, and plan.MD's Installation, E2E, and Reset Contract for the offline-demo guarantees.
