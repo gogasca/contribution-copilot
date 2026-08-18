@@ -1,0 +1,5 @@
+Raise an actionable ValueError from resolve_obj_by_qualname when the given
+qualname has no module/object separator, and extend the existing
+tests/utils_/test_import_utils.py with positive and negative coverage.
+Valid qualnames and the existing AttributeError-for-missing-object behavior
+are unchanged.

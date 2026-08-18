@@ -1,0 +1,58 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Contribution Copilot: Plan",
+      "type": "shell",
+      "command": "uv run contrib-pilot plan demo/issue.md --provider fixture",
+      "options": { "cwd": "${workspaceFolder}/demo/workspace" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Contribution Copilot: Propose Changes",
+      "type": "shell",
+      "command": "uv run contrib-pilot scaffold --dry-run --provider fixture",
+      "options": { "cwd": "${workspaceFolder}/demo/workspace" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Contribution Copilot: Apply",
+      "type": "shell",
+      "command": "uv run contrib-pilot scaffold --apply",
+      "options": { "cwd": "${workspaceFolder}/demo/workspace" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Contribution Copilot: Validate",
+      "type": "shell",
+      "command": "uv run contrib-pilot validate --tier fast --format compiler",
+      "options": { "cwd": "${workspaceFolder}/demo/workspace" },
+      "problemMatcher": {
+        "owner": "contrib-pilot",
+        "fileLocation": "relative",
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):\\s+(passed|advisory|blocking|ci_required):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      }
+    },
+    {
+      "label": "Contribution Copilot: Review",
+      "type": "shell",
+      "command": "uv run contrib-pilot review",
+      "options": { "cwd": "${workspaceFolder}/demo/workspace" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Contribution Copilot: Report",
+      "type": "shell",
+      "command": "uv run contrib-pilot report --provider fixture",
+      "options": { "cwd": "${workspaceFolder}/demo/workspace" },
+      "problemMatcher": []
+    }
+  ]
+}

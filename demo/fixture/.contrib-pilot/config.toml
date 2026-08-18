@@ -1,0 +1,28 @@
+schema_version = "1"
+working_directory = ".contrib-pilot/runs"
+max_changed_files = 6
+max_changed_lines = 250
+
+[context]
+allowed_sources = [
+  "vllm/utils/import_utils.py",
+  "tests/utils_/test_import_utils.py",
+  "vllm/logger.py",
+]
+
+[changes]
+allowed_paths = [
+  "vllm/utils/import_utils.py",
+  "tests/utils_/test_import_utils.py",
+]
+
+[[checks]]
+id = "focused-tests"
+tier = "fast"
+definition = "focused-import-utils-tests"
+timeout_seconds = 60
+
+[[checks]]
+id = "gpu-integration"
+tier = "ci"
+ci_only = true

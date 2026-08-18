@@ -1,0 +1,45 @@
+{
+  "schema_version": "1",
+  "issue_path": "demo/issue.md",
+  "base_commit": "e0e5a7fb2808504ba86c94f7b379e38496002fd0",
+  "base_file_hashes": {},
+  "acceptance_criteria": [
+    {
+      "id": "ac-1",
+      "text": "Empty strings and names without `.` raise `ValueError` with guidance that a fully qualified `module.attribute` name is required.",
+      "planned_tests": [
+        "tests/utils_/test_import_utils.py::TestResolveObjByQualname::test_raises_value_error_for_malformed_qualname"
+      ]
+    },
+    {
+      "id": "ac-2",
+      "text": "A valid standard-library qualified name still resolves successfully.",
+      "planned_tests": [
+        "tests/utils_/test_import_utils.py::TestResolveObjByQualname::test_resolves_valid_stdlib_qualname"
+      ]
+    },
+    {
+      "id": "ac-3",
+      "text": "A valid module with a missing object continues to raise `AttributeError` rather than being reclassified as malformed input.",
+      "planned_tests": [
+        "tests/utils_/test_import_utils.py::TestResolveObjByQualname::test_raises_attribute_error_for_missing_object"
+      ]
+    },
+    {
+      "id": "ac-4",
+      "text": "Focused positive and negative tests run without GPU or model access.",
+      "planned_tests": [
+        "tests/utils_/test_import_utils.py::TestResolveObjByQualname"
+      ]
+    }
+  ],
+  "implementation_files": ["vllm/utils/import_utils.py"],
+  "test_files": ["tests/utils_/test_import_utils.py"],
+  "sources": [],
+  "assumptions": [
+    "tests/utils_/test_import_utils.py is the nearest applicable test location; tests/utils/ does not exist upstream at the pinned commit.",
+    "resolve_obj_by_qualname has no existing callers in this fixture subset whose behavior would change for already-valid qualnames."
+  ],
+  "ci_only_checks": [],
+  "provider": "fixture"
+}

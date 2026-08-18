@@ -1,0 +1,5 @@
+#!/bin/sh
+# managed-by: contrib-pilot
+# No commit-message convention is configured for this fixture; present but
+# a no-op, so `hooks install` doesn't silently skip wiring it up.
+exit 0

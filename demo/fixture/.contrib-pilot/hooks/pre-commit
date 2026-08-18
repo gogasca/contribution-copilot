@@ -1,0 +1,7 @@
+#!/bin/sh
+# managed-by: contrib-pilot
+# Installed via `contrib-pilot hooks install`, which sets core.hooksPath to
+# this directory. Fast, deterministic, offline, non-mutating — see
+# plan.MD "Git Hooks: Early Feedback Without Surprise Mutations".
+set -e
+exec contrib-pilot hook pre-commit

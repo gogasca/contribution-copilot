@@ -1,0 +1,58 @@
+{
+  "schema_version": "1",
+  "repository": "https://github.com/vllm-project/vllm",
+  "commit": "e0e5a7fb2808504ba86c94f7b379e38496002fd0",
+  "retrieval_date": "2026-08-18",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "fixture_path": "vllm/utils/import_utils.py",
+      "upstream_path": "vllm/utils/import_utils.py",
+      "sha256": "2fcdf700b98ccc749d8c27958701d69481466d5941fd6e43f169e921b009e841",
+      "role": "source",
+      "note": "Unmodified copy at the pinned commit. Implementation target."
+    },
+    {
+      "fixture_path": "tests/utils_/test_import_utils.py",
+      "upstream_path": "tests/utils_/test_import_utils.py",
+      "sha256": "8e508056058c5368b7004d5b173eb3b7a51374ffe993519986c08a9256f6d9b7",
+      "role": "source",
+      "note": "Unmodified copy at the pinned commit. This is the nearest existing test module (there is no tests/utils/ directory upstream); the demo extends it rather than creating a new file."
+    },
+    {
+      "fixture_path": "vllm/logger.py",
+      "upstream_path": null,
+      "sha256": null,
+      "role": "fixture-scaffold",
+      "note": "Stub replacing vLLM's real logging setup so the fixture is importable standalone, without a full vLLM install. Not an upstream file — see demo/SOURCE.md."
+    },
+    {
+      "fixture_path": "vllm/__init__.py",
+      "upstream_path": null,
+      "sha256": null,
+      "role": "fixture-scaffold",
+      "note": "Empty package marker, not an upstream file."
+    },
+    {
+      "fixture_path": "vllm/utils/__init__.py",
+      "upstream_path": null,
+      "sha256": null,
+      "role": "fixture-scaffold",
+      "note": "Empty package marker, not an upstream file."
+    },
+    {
+      "fixture_path": "tests/__init__.py",
+      "upstream_path": null,
+      "sha256": null,
+      "role": "fixture-scaffold",
+      "note": "Empty package marker, not an upstream file."
+    },
+    {
+      "fixture_path": "tests/utils_/__init__.py",
+      "upstream_path": null,
+      "sha256": null,
+      "role": "fixture-scaffold",
+      "note": "Empty package marker, not an upstream file."
+    }
+  ]
+}
