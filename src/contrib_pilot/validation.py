@@ -37,6 +37,7 @@ CHECK_REGISTRY: dict[str, list[str]] = {
         "pytest",
         "tests/utils_/test_import_utils.py::TestResolveObjByQualname",
         "-q",
+        "--noconftest",
     ],
     "project-pre-commit-changed-files": [
         "{python}",
@@ -49,7 +50,11 @@ CHECK_REGISTRY: dict[str, list[str]] = {
 
 
 def _sanitized_env() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k in _ALLOWED_ENV_KEYS}
+    env = {k: v for k, v in os.environ.items() if k in _ALLOWED_ENV_KEYS}
+    # The assistant extra pulls in anyio, whose pytest plugin imports asyncio
+    # and crashes some Windows Store Pythons (WinError 10106) before tests run.
+    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    return env
 
 
 def _resolve_command(check: CheckDefinition, changed_files: list[str]) -> list[str]:

@@ -8,17 +8,21 @@ The implementation should optimize CUJ 1 first. CUJs 2–6 make that flow safe a
 
 ## CUJ Summary
 
-| Priority | Journey | User outcome | Primary command |
-| --- | --- | --- | --- |
-| P0 | 1. Plan a first contribution | Engineer receives a bounded, convention-aware plan | `contrib-pilot plan issue.md` |
-| P0 | 2. Review and apply a proposed change | Engineer sees and approves a patch before files change | `contrib-pilot scaffold` |
-| P0 | 3. Validate before code review | Engineer catches objective failures and advisory risks early | `contrib-pilot validate` |
-| P0 | 4. Detect scope drift and prepare review | Engineer confirms the final diff still matches the plan | `contrib-pilot review` |
-| P0 | 5. Share lifecycle evidence | Multiple roles receive one traceable report | `contrib-pilot report` |
-| P0 | 9. Run the governed flow end to end | Engineer completes all stages through a resumable orchestrator | `contrib-pilot run issue.md` |
-| P1 | 6. Recover safely from a blocked action | Engineer receives a clear failure and remediation without data loss | All mutating commands |
-| P1 | 7. Work from an IDE | Engineer runs the same workflow and reviews artifacts in an IDE | IDE tasks invoking CLI |
-| P1 | 8. Receive optional Git-time feedback | Engineer catches fast policy violations while committing | Installed Git hooks |
+
+| Priority | Journey                                  | User outcome                                                        | Primary command               |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------- | ----------------------------- |
+| P0       | 1. Plan a first contribution             | Engineer receives a bounded, convention-aware plan                  | `contrib-pilot plan issue.md` |
+| P0       | 2. Review and apply a proposed change    | Engineer sees and approves a patch before files change              | `contrib-pilot scaffold`      |
+| P0       | 3. Validate before code review           | Engineer catches objective failures and advisory risks early        | `contrib-pilot validate`      |
+| P0       | 4. Detect scope drift and prepare review | Engineer confirms the final diff still matches the plan             | `contrib-pilot review`        |
+| P0       | 5. Share lifecycle evidence              | Multiple roles receive one traceable report                         | `contrib-pilot report`        |
+| P0       | 9. Run the governed flow end to end      | Engineer completes all stages through a resumable orchestrator      | `contrib-pilot run issue.md`  |
+| P1       | 6. Recover safely from a blocked action  | Engineer receives a clear failure and remediation without data loss | All mutating commands         |
+| P1       | 7. Work from an IDE                      | Engineer runs the same workflow and reviews artifacts in an IDE     | IDE tasks invoking CLI        |
+| P1       | 8. Receive optional Git-time feedback    | Engineer catches fast policy violations while committing            | Installed Git hooks           |
+
+
+
 
 ## Developer Quickstart: From Clone to PR
 
@@ -29,7 +33,7 @@ git clone <repo>
 contrib-pilot init                          # once per clone; validates config.toml, creates .contrib-pilot/runs/
 git switch -c bugfix/12345-validation-message
 contrib-pilot hooks install                 # optional, but do this early so pre-commit gives fast feedback automatically
-contrib-pilot plan issue.md                 # do this before editing anything
+u                # do this before editing anything
 ```
 
 From there, two supported paths converge on the same validation and review commands.
@@ -61,6 +65,8 @@ git commit -s -m "[Bugfix] Improve validation error for empty model names"
 git push -u origin bugfix/12345-validation-message
 ```
 
+
+
 ### Recommendations
 
 1. Run `plan` before writing any code, even on the hand-edited path — it is the step that prevents scope drift later, not an optional extra.
@@ -70,7 +76,11 @@ git push -u origin bugfix/12345-validation-message
 5. Treat `ci_required` findings as accurate, not as a gap to route around — it means the tool correctly identified a check it cannot verify locally.
 6. Read advisory findings for their cited evidence even when a run is otherwise clean; they are never hidden once raised.
 
+
+
 ## CUJ 1: Plan a First Contribution
+
+
 
 ### User story
 
@@ -83,6 +93,8 @@ As a new engineer, I want to give the tool an issue and receive a focused implem
 - The issue includes a description and acceptance criteria.
 - The demo fixture or pinned vLLM checkout is available locally.
 
+
+
 ### Happy path
 
 1. The engineer runs `contrib-pilot plan issue.md`.
@@ -90,14 +102,16 @@ As a new engineer, I want to give the tool an issue and receive a focused implem
 3. It inventories only approved guidance, nearby source files, tests, and project configuration.
 4. It records every consulted source and its content hash.
 5. It creates a structured plan containing:
-   - normalized acceptance criteria;
-   - proposed implementation and test files;
-   - applicable conventions;
-   - acceptance-criterion-to-test mapping;
-   - local and CI-only checks;
-   - assumptions, risks, and unanswered questions.
+  - normalized acceptance criteria;
+  - proposed implementation and test files;
+  - applicable conventions;
+  - acceptance-criterion-to-test mapping;
+  - local and CI-only checks;
+  - assumptions, risks, and unanswered questions.
 6. The tool writes `plan.json` and a readable `plan.md` to its ignored working directory.
 7. No implementation file changes.
+
+
 
 ### Failure and recovery
 
@@ -106,6 +120,8 @@ As a new engineer, I want to give the tool an issue and receive a focused implem
 - Suggested file is outside the allowlist: reject the plan and identify the violated rule.
 - Assistant/model unavailable: retain deterministic discovery output and allow the engineer to supply a conforming `plan.json` manually.
 
+
+
 ### Acceptance criteria
 
 - Planning performs no writes outside the tool working directory.
@@ -113,7 +129,11 @@ As a new engineer, I want to give the tool an issue and receive a focused implem
 - The output proposes at least one focused test or requires a written justification.
 - Re-running with unchanged inputs produces the same discovery inventory and stable structured fields.
 
+
+
 ## CUJ 2: Review and Apply a Proposed Change
+
+
 
 ### User story
 
@@ -131,12 +151,16 @@ As an engineer, I want to review the exact proposed code and test changes before
 8. The tool rechecks base hashes, shows the change summary, and requests explicit confirmation unless `--yes` is used in an already approved automation context.
 9. The tool snapshots all affected files, applies validated regular-text-file replacements, and writes an approval record. If a later write fails, it attempts rollback and reports whether restoration succeeded.
 
+
+
 ### Failure and recovery
 
 - A target file changed after planning: refuse to apply and instruct the user to re-plan or regenerate the proposal.
 - Patch conflict: leave tracked files unchanged and preserve the diff for manual review.
 - Proposed path violates policy: reject the entire proposal.
 - Partial application error: attempt restoration from the temporary snapshot and report both the original failure and rollback result. Do not claim transactional atomicity.
+
+
 
 ### Acceptance criteria
 
@@ -145,7 +169,11 @@ As an engineer, I want to review the exact proposed code and test changes before
 - Existing uncommitted edits are never overwritten.
 - Approval records include the proposal hash, base commit, timestamp, and invocation mode.
 
+
+
 ## CUJ 3: Validate Before Code Review
+
+
 
 ### User story
 
@@ -159,11 +187,13 @@ As an engineer, I want one command to run the checks appropriate for my change a
 4. It invokes narrow existing project commands, such as focused pytest and pre-commit checks.
 5. It captures command, duration, exit code, and bounded output.
 6. It classifies each result:
-   - `blocking`: objective policy violation or required check failure;
-   - `advisory`: heuristic concern requiring human judgment;
-   - `ci_required`: applicable check unavailable locally;
-   - `passed`: locally observed success.
+  - `blocking`: objective policy violation or required check failure;
+  - `advisory`: heuristic concern requiring human judgment;
+  - `ci_required`: applicable check unavailable locally;
+  - `passed`: locally observed success.
 7. It writes `validation.json` and prints IDE-compatible diagnostics.
+
+
 
 ### Full-tier variation
 
@@ -176,6 +206,8 @@ As an engineer, I want one command to run the checks appropriate for my change a
 - Heuristic detects a weak assertion: mark it advisory and cite the evidence rather than blocking by default.
 - Output is too large: preserve full output in an artifact and show a concise terminal summary.
 
+
+
 ### Acceptance criteria
 
 - Every invoked command and result is recorded.
@@ -183,7 +215,11 @@ As an engineer, I want one command to run the checks appropriate for my change a
 - Exit status is nonzero for blocking findings and zero for advisory-only findings unless strict mode is explicitly enabled.
 - Diagnostics support both JSON and `path:line:column: severity: message` formats.
 
+
+
 ## CUJ 4: Detect Scope Drift and Prepare Review
+
+
 
 ### User story
 
@@ -197,6 +233,8 @@ As an engineer or reviewer, I want to know whether the final working-tree change
 4. It flags unrelated files, unexplained behavior changes, missing planned tests, unresolved blocking findings, and stale validation evidence.
 5. It produces a review summary with acceptance-criteria coverage and remaining decisions.
 
+
+
 ### Acceptance criteria
 
 - New files or changed paths absent from the plan are visible as scope drift.
@@ -204,7 +242,11 @@ As an engineer or reviewer, I want to know whether the final working-tree change
 - The review summary never claims “ready” while a blocking finding remains.
 - Advisory findings remain visible even when the change is otherwise review-ready.
 
+
+
 ## CUJ 5: Share Lifecycle Evidence
+
+
 
 ### User story
 
@@ -216,11 +258,13 @@ As a contributor, I want one report that lets Engineering, PM, QA, and DevOps un
 2. The tool assembles existing plan, approval, diff, review, and validation artifacts without rerunning checks implicitly.
 3. It writes `report.md` and `report.json`.
 4. The report contains shared facts plus role-specific sections:
-   - Engineering: design, diff, conventions, commands, assumptions, sign-off/disclosure readiness, and risks.
-   - PM: acceptance coverage, user impact, scope, and deferred work.
-   - QA: test cases, edge cases, regression surface, manual tests, and missing hardware coverage.
-   - DevOps: local evidence, CI-required checks, dependencies/configuration, rollout signals, and rollback considerations.
+  - Engineering: design, diff, conventions, commands, assumptions, sign-off/disclosure readiness, and risks.
+  - PM: acceptance coverage, user impact, scope, and deferred work.
+  - QA: test cases, edge cases, regression surface, manual tests, and missing hardware coverage.
+  - DevOps: local evidence, CI-required checks, dependencies/configuration, rollout signals, and rollback considerations.
 5. Every status links back to its source artifact.
+
+
 
 ### Acceptance criteria
 
@@ -229,7 +273,11 @@ As a contributor, I want one report that lets Engineering, PM, QA, and DevOps un
 - Unknown and not-run states remain explicit.
 - Markdown is readable in a terminal, browser, or IDE preview.
 
+
+
 ## CUJ 6: Recover Safely From a Blocked Action
+
+
 
 ### User story
 
@@ -241,10 +289,12 @@ As an engineer, I want failures to preserve my work and explain the next safe ac
 2. Run `contrib-pilot scaffold --apply` or `contrib-pilot review`.
 3. The tool detects the changed base or boundary violation.
 4. It makes no destructive changes and prints:
-   - what condition failed;
-   - the affected file or rule;
-   - what evidence was expected and observed;
-   - safe remediation commands.
+  - what condition failed;
+  - the affected file or rule;
+  - what evidence was expected and observed;
+  - safe remediation commands.
+
+
 
 ### Acceptance criteria
 
@@ -252,7 +302,11 @@ As an engineer, I want failures to preserve my work and explain the next safe ac
 - Temporary application state is cleaned up or retained with a clear recovery explanation.
 - Error output is actionable and has a stable error code.
 
+
+
 ## CUJ 7: Work From an IDE
+
+
 
 ### User story
 
@@ -269,6 +323,8 @@ As an engineer working primarily in an IDE, I want to invoke and review the same
 7. Findings appear in the terminal and IDE Problems panel through a problem matcher.
 8. They open `report.md` in Markdown preview.
 
+
+
 ### Acceptance criteria
 
 - IDE tasks contain no policy or business logic.
@@ -276,7 +332,11 @@ As an engineer working primarily in an IDE, I want to invoke and review the same
 - The core workflow remains usable in any editor.
 - A sample `.vscode/tasks.json` may be included for the demo, but the Python package has no VS Code or Cursor dependency.
 
+
+
 ## CUJ 8: Receive Optional Git-Time Feedback
+
+
 
 ### User story
 
@@ -290,6 +350,8 @@ As an engineer, I want fast feedback during normal Git operations without allowi
 4. If no conflict exists, the tool configures the versioned hook directory after confirmation.
 5. If another hook system exists, installation stops and provides composition instructions.
 
+
+
 ### Commit journey
 
 1. The engineer stages files and runs `git commit`.
@@ -297,6 +359,8 @@ As an engineer, I want fast feedback during normal Git operations without allowi
 3. It checks staged paths, prohibited files, plan/test mapping, and only configured fast checks.
 4. Objective failures block the commit with remediation; advisory findings are printed but do not block by default.
 5. The hook does not modify files.
+
+
 
 ### Acceptance criteria
 
@@ -306,7 +370,11 @@ As an engineer, I want fast feedback during normal Git operations without allowi
 - Hook checks examine staged content where relevant rather than unrelated working-tree changes.
 - CI remains authoritative because Git hooks can be bypassed.
 
+
+
 ## CUJ 9: Run the Governed Flow End to End
+
+
 
 ### User story
 
@@ -352,6 +420,8 @@ report
 optional commit preparation
 ```
 
+
+
 ### Resumption and automation
 
 - Persist a `run.json` state machine after every completed stage.
@@ -360,6 +430,8 @@ optional commit preparation
 - Support `--non-interactive` only when a previously recorded proposal approval exists. Missing approval causes a safe failure rather than implicit acceptance.
 - Support `--stop-after plan|proposal|apply|validate|review|report` for IDE tasks and debugging.
 - Print the next action whenever the flow pauses.
+
+
 
 ### Suggested state model
 
@@ -401,6 +473,8 @@ Do not model the flow as a single large function. `run` should call the same app
 - An interrupted run resumes without repeating valid completed work.
 - Changed inputs invalidate stale downstream evidence.
 - No default E2E mode commits, pushes, opens a PR, or deploys.
+
+
 
 ## From Working Change to Commit and PR
 
@@ -510,7 +584,11 @@ Closes #12345
 - Generated reports and transient run artifacts are excluded from the commit unless deliberately part of the contribution.
 - Push and PR creation remain outside the default E2E command.
 
+
+
 ## Suggested Python Implementation
+
+
 
 ### Technology choices
 
@@ -712,6 +790,8 @@ Artifacts should include a schema version so the final-round extension can evolv
 - Run fast checks against staged content.
 - Provide uninstall that removes only configuration installed by this tool.
 
+
+
 ### Configuration sketch
 
 ```toml
@@ -759,15 +839,17 @@ Glob matching must be implemented consistently and tested, especially for reposi
 
 ### CLI exit codes
 
-| Code | Meaning |
-| --- | --- |
-| `0` | Completed; no blocking findings |
-| `2` | Invalid command input or configuration |
-| `3` | Missing required context or generation provider |
-| `4` | Boundary or policy violation |
-| `5` | Stale base, patch conflict, or unsafe write prevented |
-| `6` | Required validation failed |
-| `7` | Internal or artifact integrity error |
+
+| Code | Meaning                                               |
+| ---- | ----------------------------------------------------- |
+| `0`  | Completed; no blocking findings                       |
+| `2`  | Invalid command input or configuration                |
+| `3`  | Missing required context or generation provider       |
+| `4`  | Boundary or policy violation                          |
+| `5`  | Stale base, patch conflict, or unsafe write prevented |
+| `6`  | Required validation failed                            |
+| `7`  | Internal or artifact integrity error                  |
+
 
 Advisory-only findings should return `0` by default. A documented `--strict` mode may promote configured advisories for CI.
 
