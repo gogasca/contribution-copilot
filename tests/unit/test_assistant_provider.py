@@ -111,6 +111,39 @@ def test_create_proposal_accepts_draft(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(proposal.files[0], ProposedFile)
 
 
+def test_create_proposal_accepts_edits(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = AssistantProvider()
+    body = {
+        "files": [
+            {
+                "path": "vllm/v1/core/sched/scheduler.py",
+                "edits": [{"old_string": "input_budget -= num_new_tokens + draft_slots", "new_string": "input_budget -= num_new_tokens"}],
+            }
+        ],
+        "summary": "Split target and draft budgets.",
+    }
+    monkeypatch.setattr(provider, "_call", lambda system, payload, **_kwargs: json.dumps(body))
+    plan = ChangePlan(
+        issue_path=Path("issue.md"),
+        base_commit="e0e5a7fb",
+        base_file_hashes={},
+        acceptance_criteria=[AcceptanceCriterion(id="ac-1", text="x")],
+        implementation_files=[Path("vllm/v1/core/sched/scheduler.py")],
+        test_files=[],
+        sources=[],
+    )
+    proposal = provider.create_proposal(
+        ProposalRequest(
+            plan=plan,
+            source_contents={},
+            rewrite_paths=[],
+            edit_paths=["vllm/v1/core/sched/scheduler.py"],
+        )
+    )
+    assert proposal.files[0].edits
+    assert proposal.files[0].content is None
+
+
 def test_client_raises_when_anthropic_is_incomplete(monkeypatch: pytest.MonkeyPatch) -> None:
     import sys
     import types
@@ -143,4 +176,68 @@ def test_invoke_disables_thinking_and_rejects_max_tokens_stop(
     with pytest.raises(MissingContextError, match="truncated at max_tokens"):
         provider._invoke("sys", {"x": 1})
     assert captured["thinking"] == {"type": "disabled"}
-    assert captured["max_tokens"] == 32_000
+    assert captured["max_tokens"] == provider.max_output_tokens
+
+
+def test_invoke_prefers_streaming(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    provider = AssistantProvider()
+    captured: dict = {}
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get_final_message(self):
+            return SimpleNamespace(
+                content=[SimpleNamespace(type="text", text='{"ok": true}')],
+                stop_reason="end_turn",
+            )
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            captured.update(kwargs)
+            return FakeStream()
+
+        def create(self, **kwargs):
+            raise AssertionError("non-streaming create should not be used")
+
+    monkeypatch.setattr(provider, "_client", lambda: SimpleNamespace(messages=FakeMessages()))
+    assert provider._invoke("sys", {"x": 1}) == '{"ok": true}'
+    assert captured["thinking"] == {"type": "disabled"}
+
+
+def test_invoke_maps_timeout_to_missing_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    class APITimeoutError(Exception):
+        pass
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            raise APITimeoutError("Request timed out or interrupted")
+
+    provider = AssistantProvider()
+    monkeypatch.setattr(provider, "_client", lambda: SimpleNamespace(messages=FakeMessages()))
+    with pytest.raises(MissingContextError, match="timed out"):
+        provider._invoke("sys", {"x": 1})
+
+
+def test_invoke_maps_bad_request_to_missing_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    class BadRequestError(Exception):
+        pass
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            raise BadRequestError("max_tokens: 256000 > 128000")
+
+    provider = AssistantProvider()
+    monkeypatch.setattr(provider, "_client", lambda: SimpleNamespace(messages=FakeMessages()))
+    with pytest.raises(MissingContextError, match="rejected the request"):
+        provider._invoke("sys", {"x": 1})

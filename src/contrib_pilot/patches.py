@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from contrib_pilot.config import Config
-from contrib_pilot.errors import StaleStateError
-from contrib_pilot.models import ChangePlan, ProposedChange
+from contrib_pilot.errors import BoundaryViolationError, StaleStateError
+from contrib_pilot.models import ChangePlan, FileEdit, ProposedChange, ProposedFile
 
 
 def _sha256_text(text: str) -> str:
@@ -29,12 +29,44 @@ def _current_text(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
+def apply_edits(current: str, edits: list[FileEdit]) -> str:
+    """Apply unique search/replace hunks. Each old_string must match once."""
+
+    text = current
+    for index, edit in enumerate(edits):
+        if not edit.old_string:
+            raise BoundaryViolationError(
+                f"Edit {index} has an empty old_string",
+                remediation="Re-propose with a unique, non-empty search string.",
+            )
+        matches = text.count(edit.old_string)
+        if matches == 0:
+            raise BoundaryViolationError(
+                f"Edit {index} old_string was not found in the current file",
+                remediation="Re-propose against the current file contents.",
+            )
+        if matches > 1:
+            raise BoundaryViolationError(
+                f"Edit {index} old_string matches {matches} times; it must be unique",
+                remediation="Widen the hunk with surrounding lines so it matches once.",
+            )
+        text = text.replace(edit.old_string, edit.new_string, 1)
+    return text
+
+
+def materialize(config: Config, proposed_file: ProposedFile) -> str:
+    if proposed_file.edits:
+        current = _current_text(config.repo_root / proposed_file.path)
+        return apply_edits(current, proposed_file.edits)
+    return proposed_file.content or ""
+
+
 def render_unified_diff(config: Config, proposal: ProposedChange) -> str:
     chunks: list[str] = []
     for proposed_file in proposal.files:
         resolved = config.repo_root / proposed_file.path
         before = _current_text(resolved).splitlines(keepends=True)
-        after = proposed_file.content.splitlines(keepends=True)
+        after = materialize(config, proposed_file).splitlines(keepends=True)
         diff = difflib.unified_diff(
             before,
             after,
@@ -46,8 +78,16 @@ def render_unified_diff(config: Config, proposal: ProposedChange) -> str:
 
 
 def proposal_hash(proposal: ProposedChange) -> str:
-    payload = "\x00".join(f"{f.path}\x00{f.content}" for f in proposal.files)
-    return _sha256_text(payload)
+    parts: list[str] = []
+    for proposed_file in proposal.files:
+        if proposed_file.edits:
+            hunks = "\x00".join(
+                f"{edit.old_string}\x00{edit.new_string}" for edit in proposed_file.edits
+            )
+            parts.append(f"{proposed_file.path}\x00edits\x00{hunks}")
+        else:
+            parts.append(f"{proposed_file.path}\x00{proposed_file.content or ''}")
+    return _sha256_text("\x00".join(parts))
 
 
 @dataclass
@@ -96,10 +136,10 @@ def apply_proposal(config: Config, plan: ChangePlan, proposal: ProposedChange) -
     try:
         for proposed_file, resolved in resolved_targets:
             resolved.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write(resolved, proposed_file.content)
+            _atomic_write(resolved, materialize(config, proposed_file))
             applied.append(str(proposed_file.path))
         return ApplyResult(applied_paths=applied)
-    except OSError as exc:
+    except (OSError, BoundaryViolationError) as exc:
         rollback_ok = _rollback(snapshots)
         return ApplyResult(
             applied_paths=applied,

@@ -18,7 +18,7 @@ from contrib_pilot import patches, planner, reporting, review as review_mod, val
 from contrib_pilot.config import Config, init_repo, load_config
 from contrib_pilot.errors import ContribPilotError
 from contrib_pilot.git import base_commit, changed_paths, repo_root as git_repo_root, staged_paths
-from contrib_pilot.models import ChangePlan, ProposedChange, ReviewSummary, ValidationReport
+from contrib_pilot.models import ChangePlan, ProposedChange, ReviewSummary, Severity, ValidationReport
 
 app = typer.Typer(add_completion=False, help="Contribution Copilot")
 hooks_app = typer.Typer(add_completion=False, help="Manage Git hooks")
@@ -29,10 +29,15 @@ err_console = Console(stderr=True)
 
 CURRENT_RUN_ID = "current"
 
-DEFAULT_SOURCE_PURPOSES = {
-    "vllm/utils/import_utils.py": "implementation file under change",
-    "tests/utils_/test_import_utils.py": "nearest existing test module",
-}
+
+def _source_purposes(config: Config) -> dict[str, str]:
+    """Use exact (non-glob) allowed_sources as the planner's context set."""
+
+    return {
+        pattern: "approved source"
+        for pattern in config.allowed_sources
+        if not any(char in pattern for char in "*?[")
+    }
 
 
 def _resolve_repo(path: Path | None) -> Path:
@@ -113,7 +118,7 @@ def plan(
         issue_path=issue,
         base_commit=commit,
         provider=prov,
-        source_purposes=DEFAULT_SOURCE_PURPOSES,
+        source_purposes=_source_purposes(config),
     )
 
     run_dir = _run_dir(config)
@@ -182,7 +187,12 @@ def scaffold(
         diff_text = patches.render_unified_diff(config, proposal)
         (run_dir / "proposal.json").write_text(proposal.model_dump_json(indent=2), encoding="utf-8")
         (run_dir / "proposal.diff").write_text(diff_text, encoding="utf-8")
-        console.print(f"[green]OK[/green] proposal.diff written ({len(proposal.files)} file(s)).")
+        hunk_count = sum(1 for proposed_file in proposal.files if proposed_file.edits)
+        console.print(
+            f"[green]OK[/green] proposal.diff written ({len(proposal.files)} file(s)"
+            + (f", {hunk_count} via search/replace" if hunk_count else "")
+            + ")."
+        )
         console.print(diff_text or "[dim](no changes)[/dim]")
         return
 
@@ -236,6 +246,8 @@ def validate(
     else:
         for result in report.command_results:
             console.print(f"- {result.check_id}: [bold]{result.status.value}[/bold] ({result.duration_seconds:.1f}s)")
+            if result.status is not Severity.PASSED and result.output_excerpt:
+                console.print(result.output_excerpt.rstrip())
         for finding in report.findings:
             console.print(f"- [{finding.severity.value}] {finding.rule_id}: {finding.message}")
 
@@ -343,7 +355,7 @@ def run_cmd(
         config=config,
         issue_path=issue,
         provider=prov,
-        source_purposes=DEFAULT_SOURCE_PURPOSES,
+        source_purposes=_source_purposes(config),
         confirm=_confirm,
         run_id=effective_run_id,
         non_interactive=non_interactive,
