@@ -43,7 +43,26 @@ def test_extract_json_strips_markdown_fences() -> None:
     assert json.loads(_extract_json(raw)) == {"a": 1}
 
 
-def test_create_plan_accepts_draft_without_engine_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_plan_includes_convention_constraints(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = AssistantProvider()
+    captured: dict = {}
+
+    def _call(system, payload, **_kwargs):
+        captured.update(payload)
+        return json.dumps(_valid_draft())
+
+    monkeypatch.setattr(provider, "_call", _call)
+    request = _request()
+    request = request.model_copy(
+        update={
+            "applicable_rules": ["libs.no-new-third-party"],
+            "observed_imports": ["os"],
+            "lint_policy_summary": "Ruff select: UP",
+        }
+    )
+    provider.create_plan(request)
+    assert "libs.no-new-third-party" in captured["convention_constraints"]
+    assert "os" in captured["observed_imports"]
     provider = AssistantProvider()
     monkeypatch.setattr(provider, "_call", lambda system, payload, **_kwargs: json.dumps(_valid_draft()))
 

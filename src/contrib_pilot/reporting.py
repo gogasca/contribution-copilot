@@ -62,6 +62,8 @@ def render_markdown(inputs: ReportInputs) -> str:
         "",
         f"- Assumptions: {', '.join(plan.assumptions) or 'none recorded'}",
         f"- Sources consulted: {len(plan.sources)}",
+        f"- Convention rules: {', '.join(plan.applicable_rules) or 'none'}",
+        f"- Observed imports: {', '.join(plan.observed_imports) or 'none'}",
         f"- Proposal summary: {inputs.proposal.summary if inputs.proposal else '_not yet proposed_'}",
         "",
         "## PM",

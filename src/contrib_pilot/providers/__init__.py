@@ -23,6 +23,10 @@ class PlanRequest(BaseModel):
     source_contents: dict[str, str]
     base_commit: str
     allowed_paths: list[str]
+    applicable_rules: list[str] = Field(default_factory=list)
+    observed_imports: list[str] = Field(default_factory=list)
+    lint_checks: list[str] = Field(default_factory=list)
+    lint_policy_summary: str = ""
 
 
 class ProposalRequest(BaseModel):
@@ -30,6 +34,10 @@ class ProposalRequest(BaseModel):
     source_contents: dict[str, str]
     rewrite_paths: list[str] = Field(default_factory=list)
     edit_paths: list[str] = Field(default_factory=list)
+    applicable_rules: list[str] = Field(default_factory=list)
+    observed_imports: list[str] = Field(default_factory=list)
+    lint_checks: list[str] = Field(default_factory=list)
+    lint_policy_summary: str = ""
 
 
 class GenerationProvider(Protocol):

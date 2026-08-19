@@ -28,7 +28,17 @@ allowed_paths = [
 ]
 
 # `definition` must be a key in contrib_pilot.validation.CHECK_REGISTRY.
-# config.toml cannot introduce a new executable.
+# [conventions].rules must be keys in contrib_pilot.conventions.RULE_REGISTRY.
+
+[conventions]
+rules = [
+  "typing.pep604-union",
+  "typing.builtin-generics",
+  "typing.any-on-new-api",
+  "libs.no-new-third-party",
+  "hints.google-docstring",
+]
+first_party_prefixes = []
 
 [[checks]]
 id = "focused-tests"

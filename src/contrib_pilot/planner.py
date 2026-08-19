@@ -13,6 +13,8 @@ from pathlib import Path
 
 from contrib_pilot.config import Config
 from contrib_pilot.context import discover_sources, file_hash, read_approved
+from contrib_pilot.conventions import constraints_from
+from contrib_pilot.conventions import ConventionConstraints
 from contrib_pilot.errors import BoundaryViolationError, MissingContextError
 from contrib_pilot.models import ChangePlan
 from contrib_pilot.providers import GenerationProvider, PlanRequest
@@ -60,6 +62,13 @@ def build_plan(
     source_contents = {
         str(evidence.path): read_approved(config, str(evidence.path)) for evidence in sources
     }
+    posix_contents = {path.replace("\\", "/"): text for path, text in source_contents.items()}
+    constraints = constraints_from(
+        source_contents=posix_contents,
+        convention_rules=config.convention_rules,
+        first_party_prefixes=config.first_party_prefixes,
+        checks=config.checks,
+    )
 
     request = PlanRequest(
         issue_text=issue_text,
@@ -68,10 +77,14 @@ def build_plan(
         source_contents=source_contents,
         base_commit=base_commit,
         allowed_paths=list(config.allowed_paths),
+        applicable_rules=constraints.applicable_rules,
+        observed_imports=constraints.observed_imports,
+        lint_checks=constraints.lint_checks,
+        lint_policy_summary=constraints.lint_policy_summary,
     )
 
     plan = provider.create_plan(request)
-    return _revalidate(plan, config, issue_path, base_commit, sources)
+    return _revalidate(plan, config, issue_path, base_commit, sources, constraints)
 
 
 def _revalidate(
@@ -80,6 +93,7 @@ def _revalidate(
     issue_path: Path,
     base_commit: str,
     sources: list,
+    constraints: ConventionConstraints,
 ) -> ChangePlan:
     """Deterministically recheck everything the provider returned.
 
@@ -121,5 +135,9 @@ def _revalidate(
             "base_commit": base_commit,
             "sources": sources,
             "base_file_hashes": base_file_hashes,
+            "applicable_rules": list(constraints.applicable_rules),
+            "observed_imports": list(constraints.observed_imports),
+            "lint_checks": list(constraints.lint_checks),
+            "lint_policy_summary": constraints.lint_policy_summary,
         }
     )

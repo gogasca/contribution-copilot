@@ -43,6 +43,7 @@ The demo targets vLLM commit `e0e5a7fb2808504ba86c94f7b379e38496002fd0` and the 
 │   ├── context.py
 │   ├── planner.py
 │   ├── generator.py
+│   ├── conventions.py           # import inventory, RULE_REGISTRY, lint-policy parse
 │   ├── providers.py
 │   ├── patches.py
 │   ├── executor.py
@@ -176,6 +177,12 @@ class ChangePlan(BaseModel):
     sources: list[SourceEvidence]
     assumptions: list[str] = Field(default_factory=list)
     ci_only_checks: list[str] = Field(default_factory=list)
+    # Engine-owned. Planner overwrites these after the provider returns.
+    # They are not part of DraftedChangePlan / provider JSON Schema.
+    applicable_rules: list[str] = Field(default_factory=list)
+    observed_imports: list[str] = Field(default_factory=list)
+    lint_checks: list[str] = Field(default_factory=list)
+    lint_policy_summary: str = ""
 
 
 class PlanArtifact(BaseModel):
@@ -328,7 +335,7 @@ Each artifact lists its direct input hashes. On `run --resume`, recompute depend
 | Changed input | Earliest invalidated stage |
 | --- | --- |
 | Issue | `planned` |
-| Applicable instruction or consulted source | `planned` |
+| Applicable instruction, consulted source, or `[conventions]` / `RULE_REGISTRY` | `planned` |
 | Provider identity/output | `planned` or `proposed`, depending on output |
 | Plan content | `proposed` |
 | Target base file before apply | `proposed`; application blocked |
@@ -364,12 +371,20 @@ class PlanRequest(BaseModel):
     base_commit: str
     allowed_change_patterns: list[str]
     context: list[ContextItem]
+    applicable_rules: list[str] = Field(default_factory=list)
+    observed_imports: list[str] = Field(default_factory=list)
+    lint_checks: list[str] = Field(default_factory=list)
+    lint_policy_summary: str = ""
 
 
 class ProposalRequest(BaseModel):
     plan: ChangePlan
     context: list[ContextItem]
     current_file_contents: dict[str, str]
+    applicable_rules: list[str] = Field(default_factory=list)
+    observed_imports: list[str] = Field(default_factory=list)
+    lint_checks: list[str] = Field(default_factory=list)
+    lint_policy_summary: str = ""
 
 
 class GenerationProvider(Protocol):
@@ -387,6 +402,152 @@ Providers are selected explicitly with `--provider fixture|assistant`.
 Before provider invocation, enforce item and total byte limits. Credentials are read only for transport and never serialized into requests or artifacts. Validate output size, schema, path boundaries, source references, and proposal hashes. Permit at most one repair request containing the schema errors and previous structured output; never change provider silently.
 
 The FixtureProvider is the first implementation gate. One configured AssistantProvider is the second gate. Missing credentials produce exit code `3` without falling back.
+
+`DraftedChangePlan` remains the provider-authored subset. It must not include `applicable_rules`, `observed_imports`, `lint_checks`, or `lint_policy_summary`. The assistant may mention conventions only in `assumptions`. After `create_plan`, `planner._revalidate` overwrites the four engine-owned fields from config and `conventions.py`, the same way it already overwrites `issue_path`, `base_commit`, and `sources`.
+
+## Convention constraints (plan and scaffold)
+
+Rationale is in plan.MD. This section is the implementation.
+
+Do not add a `lint` command or a third `--tier`. Do not run Ruff, mypy, or pip from `plan` or `scaffold`. Lint **execution** stays in `validate` via `CHECK_REGISTRY`. Plan/scaffold only **name** constraints so the first diff is already convention-shaped.
+
+### Module `conventions.py`
+
+Owns import inventory, lint-policy parse, and `RULE_REGISTRY`. `planner.py`, `generator.py`, and `validation.py` call it; they do not reimplement AST walks.
+
+```python
+from ast import Import, ImportFrom, parse, walk
+from sys import stdlib_module_names
+
+
+class RuleSpec(BaseModel):
+    id: str
+    severity: Literal["advisory", "blocking"] = "advisory"
+    applies_at: tuple[Literal["scaffold", "validate"], ...] = ("validate",)
+
+
+RULE_REGISTRY: dict[str, RuleSpec] = {
+    "typing.pep604-union": RuleSpec(id="typing.pep604-union"),
+    "typing.builtin-generics": RuleSpec(id="typing.builtin-generics"),
+    "typing.any-on-new-api": RuleSpec(id="typing.any-on-new-api"),
+    "libs.no-new-third-party": RuleSpec(
+        id="libs.no-new-third-party",
+        severity="blocking",
+        applies_at=("scaffold", "validate"),
+    ),
+    "hints.google-docstring": RuleSpec(id="hints.google-docstring"),
+}
+
+_LINT_CHECK_DEFINITIONS = frozenset({"project-pre-commit-changed-files"})
+```
+
+A new rule ID is a code change. `config.toml` may only name keys that exist in `RULE_REGISTRY`. Unknown IDs are invalid configuration (exit `2`).
+
+### Configuration
+
+```toml
+[conventions]
+rules = [
+  "typing.pep604-union",
+  "typing.builtin-generics",
+  "typing.any-on-new-api",
+  "libs.no-new-third-party",
+  "hints.google-docstring",
+]
+first_party_prefixes = ["vllm"]
+
+[[checks]]
+id = "pre-commit"
+tier = "fast"
+definition = "project-pre-commit-changed-files"
+append_changed_files = true
+timeout_seconds = 90
+```
+
+`Config` grows `convention_rules: tuple[str, ...]` and `first_party_prefixes: tuple[str, ...]`. Load-time validation: every rule ID is in `RULE_REGISTRY`; every `lint_checks` candidate has a `definition` in `_LINT_CHECK_DEFINITIONS`. Convention files (`AGENTS.md`, `pyproject.toml`, `.pre-commit-config.yaml`) are optional sources: include them in `[context].allowed_sources` when the target repo has them; skip if absent. Do not fail `plan` solely because `AGENTS.md` is missing.
+
+Optional convention source purposes used by `planner.build_plan`:
+
+| Path | Purpose |
+| --- | --- |
+| `AGENTS.md` | agent instructions |
+| `pyproject.toml` | ruff policy |
+| `.pre-commit-config.yaml` | lint hook inventory |
+
+### Import inventory
+
+`inventory_imports(source_contents: dict[str, str], first_party_prefixes: tuple[str, ...]) -> list[str]`:
+
+1. Parse each approved **implementation** source with `ast.parse`. Syntax errors skip that file (advisory at validate; do not abort plan).
+2. Collect top-level module names from `Import` and `ImportFrom` (`from pkg.sub import x` → `pkg`).
+3. Classify: `sys.stdlib_module_names` → stdlib; name or prefix in `first_party_prefixes` → first-party; else third-party.
+4. Return a sorted unique list of the raw top-level names. This list is `observed_imports`.
+
+Never execute user code. Never query PyPI or the network.
+
+`classify_import(name: str) -> Literal["stdlib", "first_party", "third_party"]` is the shared helper used by inventory and scaffold revalidation.
+
+### Lint policy summary
+
+If `pyproject.toml` is an approved source, parse it with `tomllib` and read `tool.ruff.lint.select` (list of strings). Format `lint_policy_summary` as a stable one-line string, e.g. `Ruff select: B,E,F,I,ISC,SIM,UP`. If the table is missing, the summary is empty. This string is prompt context only; it is not a command.
+
+`lint_checks` is `[check.id for check in config.checks if check.definition in _LINT_CHECK_DEFINITIONS]`.
+
+### Planner (`planner.py`)
+
+After `discover_sources` / `read_approved`:
+
+1. Compute `observed_imports` from implementation-file contents in `source_contents` (paths that will be in `allowed_paths` and exist). Test files are not part of the library allowlist.
+2. Put `applicable_rules=list(config.convention_rules)`, `observed_imports`, `lint_checks`, and `lint_policy_summary` on `PlanRequest`.
+3. Call `provider.create_plan`.
+4. In `_revalidate`, overwrite those four fields from the engine values computed in step 1–2. Drop any provider-supplied values. Continue existing path/source checks.
+
+Numbered `issue.md` lines remain acceptance criteria. An unnumbered `## Conventions` section is ordinary issue text and is already in `issue_text`.
+
+### Scaffold (`generator.py`)
+
+Copy the four fields from the saved `ChangePlan` onto `ProposalRequest` (do not recompute, so dry-run matches the approved plan). After path revalidation, if `libs.no-new-third-party` is in `plan.applicable_rules`:
+
+1. `ast.parse` each proposed file's materialized content (complete `content` or `apply_edits` result). Unparseable proposed Python is a boundary error.
+2. For each top-level import classified `third_party` and absent from `plan.observed_imports`, raise `BoundaryViolationError` (exit `4`) with remediation: reuse an import already in approved sources, or record a justified new dependency in plan assumptions and re-plan.
+
+Do **not** fail the proposal for typing or docstring heuristics. Those run at `validate` as `advisory` findings so a functionally correct patch is not discarded.
+
+### Validate (`validation.py`)
+
+`deterministic_findings` calls `conventions.evaluate(plan, changed_file_contents) -> list[Finding]` in addition to path-allowlist and empty-test-file rules.
+
+`evaluate` walks changed Python files with `ast` and emits `Finding(rule_id=..., severity=spec.severity, path=, line=, evidence=, remediation=)` for each configured rule that `applies_at` includes `"validate"`:
+
+| Rule | Detector (MVP) |
+| --- | --- |
+| `typing.pep604-union` | `ast.Subscript` / `Name` use of `Optional` or `Union` with `None` on **new** nodes relative to the base file, when neighboring approved sources already use `BitOr` unions |
+| `typing.builtin-generics` | `typing.List` / `Dict` / `Set` / `Tuple` on new nodes |
+| `typing.any-on-new-api` | annotation `Any` on a new public function (`name` not starting with `_`) |
+| `libs.no-new-third-party` | same import check as scaffold, in case of a hand-edited path |
+| `hints.google-docstring` | new public `FunctionDef` whose docstring lacks `Args:` when the function has non-`self` args |
+
+If a rule cannot be decided (parse failure, no neighboring sample), emit nothing rather than a false blocking finding.
+
+Pre-commit/Ruff still runs only when configured as a `[[checks]]` row. That is the mutating formatter (`ruff-check --fix`, `ruff-format`). Hash files before and after; mutation invalidates approval as today.
+
+### Invalidation
+
+Changing `[conventions]`, `RULE_REGISTRY`, or an allowlisted convention source invalidates from `planned` (those hashes sit on `InputFingerprint.instruction_hashes` / `command_definition_sha256` / `rule_version`). Changing only applied source files still invalidates from `validated`.
+
+### Assistant prompt extras
+
+`AssistantProvider` appends a fixed prose block built from the request fields, not from issue-supplied commands:
+
+```text
+Convention constraints (engine-authored; do not add rule IDs or packages):
+- Rules: typing.pep604-union, ...
+- Observed imports (reuse these; do not add third-party names): vllm, ...
+- Lint policy: Ruff select: E,F,UP,I
+- Lint checks that validate will run: pre-commit
+```
+
+FixtureProvider expected JSON must include the stamped fields after engine overwrite so offline hashes stay stable.
 
 ## Canonical boundary algorithm
 
@@ -433,6 +594,13 @@ tier = "fast"
 timeout_seconds = 60
 
 [[checks]]
+id = "pre-commit"
+definition = "project-pre-commit-changed-files"
+tier = "fast"
+append_changed_files = true
+timeout_seconds = 90
+
+[[checks]]
 id = "gpu-integration"
 definition = "gpu-integration"
 tier = "ci"
@@ -453,6 +621,12 @@ CHECK_DEFINITIONS = {
         definition="focused-import-utils-tests",
         executable="python",
         arguments=("-m", "pytest", "tests/utils/test_import_utils.py", "-q"),
+    ),
+    "project-pre-commit-changed-files": CommandSpec(
+        definition="project-pre-commit-changed-files",
+        executable="python",
+        arguments=("-m", "pre_commit", "run", "--files"),
+        may_modify_files=True,
     ),
 }
 ```
@@ -488,7 +662,7 @@ No fsync durability guarantee is claimed for the MVP. Interrupted writes cannot 
 
 ## Validation and diagnostics
 
-- `--tier fast`: deterministic boundaries/rules plus focused tests. Repository formatting/pre-commit checks are explicit definitions, not part of the non-mutating Contribution Copilot Git hook.
+- `--tier fast`: deterministic boundaries/rules plus focused tests. Repository formatting/pre-commit checks are explicit definitions, not part of the non-mutating Contribution Copilot Git hook. Typing/library heuristics from `RULE_REGISTRY` are additional `Finding`s on this tier; they do not run Ruff themselves.
 - `--tier ci`: complete check plan; unavailable accelerator/distributed checks report `CI_REQUIRED`, never `PASSED`.
 - Blocking findings or failed required checks return exit code `6`.
 - Advisory-only and CI-required results return `0` but remain visible.
@@ -576,7 +750,7 @@ contrib-pilot hooks install|status|uninstall
 contrib-pilot commit prepare
 ```
 
-Only `scaffold --apply` mutates contribution source files. Other commands may write run artifacts, initialize local configuration, alter explicitly approved local Git hook configuration, or restore only the marked demo workspace as described above.
+Only `scaffold --apply` mutates contribution source files. Other commands may write run artifacts, initialize local configuration, alter explicitly approved local Git hook configuration, or restore only the marked demo workspace as described above. There is no `contrib-pilot lint` command; lint execution is `validate` with a configured pre-commit check.
 
 ## Test strategy
 
@@ -589,6 +763,9 @@ Unit tests:
 - Proposal hashing, duplicate paths, unsupported operations, base mismatch, and rollback outcomes.
 - Check-ID resolution, environment filtering, timeout, process-group termination, output truncation, and network denial.
 - Provider input limits, schema failure, one repair attempt, missing credentials, and no fallback.
+- Convention stamping: provider-supplied `applicable_rules` / `observed_imports` are overwritten; unknown config rule IDs fail load.
+- Import inventory from `ast` (stdlib vs first-party vs third-party); scaffold rejects a new third-party import when `libs.no-new-third-party` is active.
+- Advisory typing/docstring findings do not fail `scaffold --dry-run`.
 - Diagnostics with complete and missing locations.
 - Hook conflict, ownership-aware uninstall, staged-content behavior, and unavailable Python.
 
@@ -620,10 +797,11 @@ Rehearsal gates:
 4. FixtureProvider planning and proposal generation.
 5. Diff review, approval, safe apply, rollback, and staleness.
 6. Check registry, executor, findings, and focused fixture validation.
-7. Review, report, and commit preparation.
-8. Orchestrator, interruption, resume, and invalidation.
-9. IDE tasks and diagnostics.
-10. Hooks after the core path is stable.
-11. AssistantProvider behind the tested provider contract.
+7. `conventions.py`: RULE_REGISTRY, import inventory, planner stamping, scaffold third-party import refusal, validate heuristics.
+8. Review, report, and commit preparation.
+9. Orchestrator, interruption, resume, and invalidation.
+10. IDE tasks and diagnostics.
+11. Hooks after the core path is stable.
+12. AssistantProvider behind the tested provider contract.
 
 Implementation may begin after the fixture-manifest step verifies the pinned source/test paths and hashes. No expected output should be frozen before that verification.

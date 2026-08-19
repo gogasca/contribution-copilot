@@ -99,6 +99,7 @@ def test_example_config_loads_and_registry_keys_exist(tmp_path: Path) -> None:
     for check in config.checks:
         if check.definition is not None:
             assert check.definition in CHECK_REGISTRY
+    assert "libs.no-new-third-party" in config.convention_rules
     assert (tmp_path / ".contrib-pilot" / "runs").is_dir()
 
 

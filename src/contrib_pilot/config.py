@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
 
+from contrib_pilot.conventions import RULE_REGISTRY
 from contrib_pilot.errors import BoundaryViolationError, InvalidInputError
 
 CONFIG_RELATIVE_PATH = Path(".contrib-pilot/config.toml")
@@ -49,6 +50,8 @@ class Config:
     allowed_sources: tuple[str, ...]
     allowed_paths: tuple[str, ...]
     checks: tuple[CheckDefinition, ...]
+    convention_rules: tuple[str, ...] = ()
+    first_party_prefixes: tuple[str, ...] = ()
     allowed_executables: tuple[str, ...] = field(
         default_factory=lambda: ("python", "python3", "uv", "git")
     )
@@ -174,6 +177,15 @@ def load_config(repo_root: Path) -> Config:
         for c in raw.get("checks", [])
     )
 
+    conventions = raw.get("conventions", {})
+    convention_rules = tuple(conventions.get("rules", ()))
+    unknown = [rule_id for rule_id in convention_rules if rule_id not in RULE_REGISTRY]
+    if unknown:
+        raise InvalidInputError(
+            f"Unknown convention rule id(s): {', '.join(unknown)}",
+            remediation="Use a key from contrib_pilot.conventions.RULE_REGISTRY, or remove it from [conventions].rules.",
+        )
+
     return Config(
         repo_root=repo_root.resolve(),
         schema_version=str(raw.get("schema_version", "1")),
@@ -183,4 +195,6 @@ def load_config(repo_root: Path) -> Config:
         allowed_sources=tuple(raw.get("context", {}).get("allowed_sources", ())),
         allowed_paths=tuple(raw.get("changes", {}).get("allowed_paths", ())),
         checks=checks,
+        convention_rules=convention_rules,
+        first_party_prefixes=tuple(conventions.get("first_party_prefixes", ())),
     )
