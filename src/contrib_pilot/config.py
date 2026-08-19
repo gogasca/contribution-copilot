@@ -76,11 +76,17 @@ class Config:
             )
         return candidate
 
+    @staticmethod
+    def _posix(relative_path: str) -> str:
+        return relative_path.replace("\\", "/")
+
     def is_allowed_source(self, relative_path: str) -> bool:
-        return any(fnmatch(relative_path, pattern) for pattern in self.allowed_sources)
+        relative_path = self._posix(relative_path)
+        return any(fnmatch(relative_path, self._posix(pattern)) for pattern in self.allowed_sources)
 
     def is_allowed_change_path(self, relative_path: str) -> bool:
-        return any(fnmatch(relative_path, pattern) for pattern in self.allowed_paths)
+        relative_path = self._posix(relative_path)
+        return any(fnmatch(relative_path, self._posix(pattern)) for pattern in self.allowed_paths)
 
     def resolve_source(self, relative_path: str) -> Path:
         if not self.is_allowed_source(relative_path):

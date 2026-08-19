@@ -72,6 +72,15 @@ CHECK_REGISTRY: dict[str, list[str]] = {
         "pytest",
         "-q",
     ],
+    # Runs only the test files named in the current ChangePlan.
+    "pytest-planned-tests": [
+        "{python}",
+        "-m",
+        "pytest",
+        "{planned_tests}",
+        "-q",
+        "--noconftest",
+    ],
 }
 
 
@@ -84,19 +93,33 @@ def _sanitized_env() -> dict[str, str]:
     return env
 
 
-def _resolve_command(check: CheckDefinition, changed_files: list[str]) -> list[str]:
+def _resolve_command(
+    check: CheckDefinition,
+    changed_files: list[str],
+    planned_tests: list[str] | None = None,
+) -> list[str]:
     if check.definition is None:
         raise ValueError(f"Check {check.id!r} has no local definition to run")
     template = CHECK_REGISTRY.get(check.definition)
     if template is None:
         raise ValueError(f"Unknown check definition: {check.definition!r}")
-    resolved = [arg.replace("{python}", sys.executable) for arg in template]
+    resolved: list[str] = []
+    for arg in template:
+        if arg == "{planned_tests}":
+            resolved.extend(planned_tests or [])
+            continue
+        resolved.append(arg.replace("{python}", sys.executable))
     if check.append_changed_files:
         resolved.extend(changed_files)
     return resolved
 
 
-def run_check(config: Config, check: CheckDefinition, changed_files: list[str]) -> CommandResult:
+def run_check(
+    config: Config,
+    check: CheckDefinition,
+    changed_files: list[str],
+    planned_tests: list[str] | None = None,
+) -> CommandResult:
     if check.ci_only and check.definition is None:
         return CommandResult(
             check_id=check.id,
@@ -106,7 +129,17 @@ def run_check(config: Config, check: CheckDefinition, changed_files: list[str]) 
             status=Severity.CI_REQUIRED,
         )
 
-    command = _resolve_command(check, changed_files)
+    if check.definition == "pytest-planned-tests" and not planned_tests:
+        return CommandResult(
+            check_id=check.id,
+            command=[],
+            exit_code=None,
+            duration_seconds=0.0,
+            status=Severity.BLOCKING,
+            output_excerpt="No planned test files to run. Re-plan with a test file, or apply the proposal first.",
+        )
+
+    command = _resolve_command(check, changed_files, planned_tests)
     start = time.monotonic()
     timed_out = False
     try:
@@ -190,8 +223,9 @@ def validate(
     *, config: Config, plan: ChangePlan, tier: str, changed_files: list[str], base_commit: str
 ) -> ValidationReport:
     findings = deterministic_findings(config, plan, changed_files)
+    planned_tests = [str(path).replace("\\", "/") for path in plan.test_files]
     command_results = [
-        run_check(config, check, changed_files) for check in config.checks_for_tier(tier)
+        run_check(config, check, changed_files, planned_tests) for check in config.checks_for_tier(tier)
     ]
 
     input_hashes = dict(plan.base_file_hashes)

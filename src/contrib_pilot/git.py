@@ -46,8 +46,20 @@ def staged_diff(repo: Path) -> str:
 
 
 def changed_paths(repo: Path) -> list[str]:
-    out = _run(["diff", "--name-only"], cwd=repo)
-    return [line for line in out.splitlines() if line]
+    """Working-tree, staged, and untracked paths. New planned tests are often untracked."""
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for args in (
+        ["diff", "--name-only"],
+        ["diff", "--cached", "--name-only"],
+        ["ls-files", "--others", "--exclude-standard"],
+    ):
+        for line in _run(args, cwd=repo).splitlines():
+            if line and line not in seen:
+                seen.add(line)
+                names.append(line)
+    return names
 
 
 def staged_paths(repo: Path) -> list[str]:

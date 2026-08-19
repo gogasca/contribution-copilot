@@ -34,3 +34,11 @@ def test_pytest_fast_is_generic_pytest() -> None:
     command = _resolve_command(check, [])
     assert command[-2:] == ["pytest", "-q"]
     assert "--noconftest" not in command
+
+
+def test_pytest_planned_tests_inserts_plan_paths() -> None:
+    check = CheckDefinition(id="focused-tests", tier="fast", definition="pytest-planned-tests")
+    command = _resolve_command(check, [], ["tests/v1/core/test_dspark_input_budget.py"])
+    assert "tests/v1/core/test_dspark_input_budget.py" in command
+    assert "--noconftest" in command
+    assert "{planned_tests}" not in command

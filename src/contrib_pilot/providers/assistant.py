@@ -27,8 +27,10 @@ _status_console = Console(stderr=True)
 
 DEFAULT_MODEL = "claude-sonnet-5"
 DEFAULT_CREDENTIAL_ENV_VAR = "ANTHROPIC_API_KEY"
-DEFAULT_TIMEOUT_SECONDS = 180
-DEFAULT_MAX_OUTPUT_TOKENS = 32_000
+DEFAULT_TIMEOUT_SECONDS = 900
+# claude-sonnet-5 rejects anything above 128000. Keep this well below
+# that so small new-file proposals finish in one streaming reply.
+DEFAULT_MAX_OUTPUT_TOKENS = 32_768
 
 
 class DraftedChangePlan(BaseModel):
@@ -73,7 +75,11 @@ _PLAN_SYSTEM_PROMPT = _schema_system_prompt(
 _PROPOSAL_SYSTEM_PROMPT = _schema_system_prompt(
     "You are drafting a ProposedChange for an already-approved ChangePlan.",
     DraftedProposal,
-    "Propose complete UTF-8 file contents only for files already listed in the plan.",
+    "For rewrite_paths: set `content` to the complete UTF-8 file and leave `edits` empty. "
+    "For edit_paths: leave `content` null and set `edits` to unique old_string/new_string hunks "
+    "copied from the provided source. Each old_string must occur exactly once in that file. "
+    "New files always use complete `content`. Do not rewrite an edit_paths file in full. "
+    "Focused tests must use the standard library only: do not import vllm, torch, or GPU stacks.",
 )
 
 
@@ -100,6 +106,33 @@ def _format_validation_errors(exc: ValidationError) -> str:
         loc = ".".join(str(part) for part in err.get("loc", ())) or "(root)"
         parts.append(f"{loc}: {err.get('msg')}")
     return "; ".join(parts)
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    while current is not None:
+        if "timeout" in type(current).__name__.lower():
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _is_api_status_error(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    while current is not None:
+        name = type(current).__name__
+        if name in {"BadRequestError", "APIStatusError", "AuthenticationError", "RateLimitError"}:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+_TIMEOUT_REMEDIATION = (
+    "Narrow the plan to smaller files (a new focused test file instead of "
+    "rewriting a large existing module), then retry "
+    "`scaffold --dry-run --provider assistant`. Anthropic long replies need "
+    "streaming; retry this build if the timeout persists."
+)
 
 
 class AssistantProvider:
@@ -145,6 +178,8 @@ class AssistantProvider:
                 ),
             )
         try:
+            # Streaming long replies still needs a generous read timeout; a
+            # single number applies to connect/read/write in the SDK.
             client = anthropic.Anthropic(api_key=api_key, timeout=self.timeout_seconds)
         except AttributeError as exc:
             raise MissingContextError(
@@ -157,6 +192,24 @@ class AssistantProvider:
             ) from exc
         return client
 
+    def _create_message(self, client, create_kwargs: dict):
+        """Prefer streaming so long JSON replies do not idle-timeout the HTTP read."""
+
+        thinking = {"type": "disabled"}
+        stream_fn = getattr(client.messages, "stream", None)
+        if callable(stream_fn):
+            try:
+                with stream_fn(**create_kwargs, thinking=thinking) as stream:
+                    return stream.get_final_message()
+            except TypeError:
+                with stream_fn(**create_kwargs) as stream:
+                    return stream.get_final_message()
+
+        try:
+            return client.messages.create(**create_kwargs, thinking=thinking)
+        except TypeError:
+            return client.messages.create(**create_kwargs)
+
     def _invoke(self, system: str, user_payload: dict) -> str:
         client = self._client()
         create_kwargs: dict = {
@@ -168,16 +221,22 @@ class AssistantProvider:
         try:
             # Sonnet 5 enables adaptive thinking by default; thinking tokens
             # count against max_tokens and truncate the JSON payload.
-            message = client.messages.create(
-                **create_kwargs,
-                thinking={"type": "disabled"},
-            )
-        except TypeError:
-            message = client.messages.create(**create_kwargs)
+            message = self._create_message(client, create_kwargs)
         except Exception as exc:
-            if "thinking" not in str(exc).lower():
-                raise
-            message = client.messages.create(**create_kwargs)
+            if _is_timeout(exc):
+                raise MissingContextError(
+                    "Assistant request timed out before a complete proposal arrived",
+                    remediation=_TIMEOUT_REMEDIATION,
+                ) from exc
+            if _is_api_status_error(exc):
+                raise MissingContextError(
+                    f"Assistant API rejected the request: {exc}",
+                    remediation=(
+                        "Check the model name and max_tokens cap, then retry "
+                        "`--provider assistant`."
+                    ),
+                ) from exc
+            raise
         text = "".join(block.text for block in message.content if block.type == "text")
         if getattr(message, "stop_reason", None) == "max_tokens":
             raise MissingContextError(
@@ -268,6 +327,8 @@ class AssistantProvider:
         payload = {
             "plan": request.plan.model_dump(mode="json"),
             "source_contents": request.source_contents,
+            "rewrite_paths": request.rewrite_paths,
+            "edit_paths": request.edit_paths,
         }
         draft = self._call_with_repair(
             _PROPOSAL_SYSTEM_PROMPT, payload, DraftedProposal, activity="scaffold proposal"

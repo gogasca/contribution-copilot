@@ -4,8 +4,8 @@ import pytest
 
 from contrib_pilot.config import load_config
 from contrib_pilot.errors import StaleStateError
-from contrib_pilot.models import ChangePlan, ProposedChange, ProposedFile
-from contrib_pilot.patches import apply_proposal, check_base_state, proposal_hash, render_unified_diff
+from contrib_pilot.models import ChangePlan, FileEdit, ProposedChange, ProposedFile
+from contrib_pilot.patches import apply_edits, apply_proposal, check_base_state, proposal_hash, render_unified_diff
 
 
 @pytest.fixture
@@ -100,6 +100,40 @@ def test_apply_proposal_writes_file_and_never_overwrites_without_matching_base(r
     proposal = ProposedChange(
         plan_hash="x", files=[ProposedFile(path=Path("pkg/a.py"), content="x = 2\n")], summary="bump"
     )
+    result = apply_proposal(config, plan, proposal)
+    assert result.error is None
+    assert (repo / "pkg" / "a.py").read_text() == "x = 2\n"
+
+
+def test_apply_edits_replaces_unique_hunk() -> None:
+    current = "alpha\nbeta\ngamma\n"
+    result = apply_edits(current, [FileEdit(old_string="beta\n", new_string="BETA\n")])
+    assert result == "alpha\nBETA\ngamma\n"
+
+
+def test_apply_edits_rejects_ambiguous_hunk() -> None:
+    from contrib_pilot.errors import BoundaryViolationError
+
+    with pytest.raises(BoundaryViolationError, match="matches 2 times"):
+        apply_edits("x = 1\nx = 1\n", [FileEdit(old_string="x = 1\n", new_string="x = 2\n")])
+
+
+def test_apply_proposal_materializes_search_replace(repo: Path) -> None:
+    config = load_config(repo)
+    plan = _plan(repo, base_hash=_current_hash(repo))
+    proposal = ProposedChange(
+        plan_hash="x",
+        files=[
+            ProposedFile(
+                path=Path("pkg/a.py"),
+                edits=[FileEdit(old_string="x = 1\n", new_string="x = 2\n")],
+            )
+        ],
+        summary="hunk",
+    )
+    diff = render_unified_diff(config, proposal)
+    assert "-x = 1" in diff
+    assert "+x = 2" in diff
     result = apply_proposal(config, plan, proposal)
     assert result.error is None
     assert (repo / "pkg" / "a.py").read_text() == "x = 2\n"

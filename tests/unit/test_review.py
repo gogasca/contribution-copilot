@@ -94,6 +94,18 @@ def test_backslash_changed_paths_match_planned_files() -> None:
     assert not summary.scope_drift
 
 
+def test_missing_planned_test_when_only_implementation_changed() -> None:
+    plan = _plan()
+    summary = build_review(
+        plan=plan,
+        changed_files=["pkg/a.py"],
+        validation=None,
+        current_base_commit="abc123",
+    )
+    assert any(e.reason == "missing_planned_test" for e in summary.scope_drift)
+    assert not summary.ready
+
+
 def test_missing_or_stale_validation_blocks_ready() -> None:
     plan = _plan()
     summary = build_review(

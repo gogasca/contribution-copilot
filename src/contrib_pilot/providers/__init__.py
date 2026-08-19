@@ -28,6 +28,8 @@ class PlanRequest(BaseModel):
 class ProposalRequest(BaseModel):
     plan: ChangePlan
     source_contents: dict[str, str]
+    rewrite_paths: list[str] = Field(default_factory=list)
+    edit_paths: list[str] = Field(default_factory=list)
 
 
 class GenerationProvider(Protocol):

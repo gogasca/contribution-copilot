@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Severity(StrEnum):
@@ -57,16 +57,38 @@ class ChangePlan(BaseModel):
     provider: str = "fixture"
 
 
-class ProposedFile(BaseModel):
-    """Complete UTF-8 contents for one regular text file.
+class FileEdit(BaseModel):
+    """One unique search/replace hunk inside an existing file."""
 
-    Deletes, renames, binaries, symlinks, and mode changes are out of scope
-    for the MVP (see plan.MD "Run Integrity, Ownership, and Staleness").
+    old_string: str
+    new_string: str
+
+
+class ProposedFile(BaseModel):
+    """One regular text file in a proposal.
+
+    Small or new files use complete ``content``. Larger existing files use
+    ``edits`` (unique old_string → new_string). The engine materializes the
+    full file before diff/apply. Deletes, renames, binaries, and mode
+    changes stay out of scope.
     """
 
     path: Path
-    content: str
+    content: str | None = None
+    edits: list[FileEdit] = Field(default_factory=list)
     is_new_file: bool = False
+
+    @model_validator(mode="after")
+    def content_xor_edits(self) -> ProposedFile:
+        has_edits = bool(self.edits)
+        has_content = self.content is not None
+        if has_edits and has_content:
+            raise ValueError(f"{self.path}: provide either complete content or edits, not both")
+        if not has_edits and not has_content:
+            raise ValueError(f"{self.path}: provide complete content or at least one edit")
+        if self.is_new_file and has_edits:
+            raise ValueError(f"{self.path}: new files require complete content, not edits")
+        return self
 
 
 class ProposedChange(BaseModel):

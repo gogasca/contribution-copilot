@@ -47,6 +47,12 @@ def test_allowed_source_resolves(repo: Path) -> None:
     assert resolved == (repo / "pkg" / "a.py").resolve()
 
 
+def test_windows_separators_match_posix_allowlist(repo: Path) -> None:
+    config = load_config(repo)
+    resolved = config.resolve_source(r"pkg\a.py")
+    assert resolved == (repo / "pkg" / "a.py").resolve()
+
+
 def test_disallowed_source_raises(repo: Path) -> None:
     config = load_config(repo)
     with pytest.raises(BoundaryViolationError):
