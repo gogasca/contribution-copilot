@@ -33,6 +33,19 @@ def test_doctor_runs_without_crashing(tmp_path: Path) -> None:
     assert result.exit_code in (0, 2)  # 2 only if this checkout is missing something
 
 
+def test_init_copies_example_config(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["init", "--path", str(tmp_path)], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "examples/config.toml" in result.output
+    copied = tmp_path / ".contrib-pilot" / "config.toml"
+    assert copied.is_file()
+    assert "pytest-fast" in copied.read_text(encoding="utf-8")
+
+    again = runner.invoke(app, ["init", "--path", str(tmp_path)], catch_exceptions=False)
+    assert again.exit_code == 0, again.output
+    assert "examples/config.toml" not in again.output
+
+
 def test_demo_reset_and_full_flow_via_cli(tmp_path: Path) -> None:
     """Drive the whole documented walkthrough through the real CLI entrypoints."""
 

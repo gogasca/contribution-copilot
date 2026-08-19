@@ -87,6 +87,7 @@ assistant = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "anthropic" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "regex" },
@@ -104,6 +105,7 @@ provides-extras = ["assistant"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "anthropic", specifier = ">=0.34" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "regex", specifier = ">=2024.5" },

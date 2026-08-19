@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from contrib_pilot.config import load_config
+from contrib_pilot.config import init_repo, load_config
 from contrib_pilot.errors import BoundaryViolationError
+from contrib_pilot.validation import CHECK_REGISTRY
 
 
 @pytest.fixture
@@ -82,3 +83,30 @@ def test_checks_for_tier(repo: Path) -> None:
     config = load_config(repo)
     assert [c.id for c in config.checks_for_tier("fast")] == ["focused-tests"]
     assert {c.id for c in config.checks_for_tier("ci")} == {"focused-tests", "gpu-integration"}
+
+
+def test_example_config_loads_and_registry_keys_exist(tmp_path: Path) -> None:
+    config, created = init_repo(tmp_path)
+    assert created is True
+    assert config.schema_version == "1"
+    assert "src/**" in config.allowed_paths
+    for check in config.checks:
+        if check.definition is not None:
+            assert check.definition in CHECK_REGISTRY
+    assert (tmp_path / ".contrib-pilot" / "runs").is_dir()
+
+
+def test_init_repo_does_not_replace_existing_policy(tmp_path: Path) -> None:
+    existing = tmp_path / ".contrib-pilot"
+    existing.mkdir()
+    (existing / "config.toml").write_text(
+        'schema_version = "1"\nworking_directory = ".contrib-pilot/runs"\n'
+        "max_changed_files = 1\nmax_changed_lines = 10\n"
+        '[context]\nallowed_sources = ["src/**"]\n'
+        '[changes]\nallowed_paths = ["src/**"]\n',
+        encoding="utf-8",
+    )
+    config, created = init_repo(tmp_path)
+    assert created is False
+    assert config.max_changed_files == 1
+    assert config.max_changed_lines == 10

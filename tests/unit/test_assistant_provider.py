@@ -121,3 +121,26 @@ def test_client_raises_when_anthropic_is_incomplete(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(MissingContextError, match="incomplete"):
         AssistantProvider()._client()
+
+
+def test_invoke_disables_thinking_and_rejects_max_tokens_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    provider = AssistantProvider()
+    captured: dict = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                content=[SimpleNamespace(type="text", text='{"files": []}')],
+                stop_reason="max_tokens",
+            )
+
+    monkeypatch.setattr(provider, "_client", lambda: SimpleNamespace(messages=FakeMessages()))
+    with pytest.raises(MissingContextError, match="truncated at max_tokens"):
+        provider._invoke("sys", {"x": 1})
+    assert captured["thinking"] == {"type": "disabled"}
+    assert captured["max_tokens"] == 32_000

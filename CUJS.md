@@ -30,7 +30,7 @@ This walks CUJs 1–9 into one continuous developer workflow, covering both the 
 
 ```bash
 git clone <repo>
-contrib-pilot init                          # once per clone; validates config.toml, creates .contrib-pilot/runs/
+contrib-pilot init                          # once per clone; copies examples/config.toml if missing, creates .contrib-pilot/runs/
 git switch -c bugfix/12345-validation-message
 contrib-pilot hooks install                 # optional, but do this early so pre-commit gives fast feedback automatically
 u                # do this before editing anything
