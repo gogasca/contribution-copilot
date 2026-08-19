@@ -16,10 +16,14 @@ import os
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from contrib_pilot.errors import MissingContextError
 from contrib_pilot.models import AcceptanceCriterion, ChangePlan, ProposedChange, ProposedFile
 from contrib_pilot.providers import PlanRequest, ProposalRequest
+
+_status_console = Console(stderr=True)
 
 DEFAULT_MODEL = "claude-sonnet-5"
 DEFAULT_CREDENTIAL_ENV_VAR = "ANTHROPIC_API_KEY"
@@ -133,7 +137,7 @@ class AssistantProvider:
             ) from exc
         return anthropic.Anthropic(api_key=api_key, timeout=self.timeout_seconds)
 
-    def _call(self, system: str, user_payload: dict) -> str:
+    def _invoke(self, system: str, user_payload: dict) -> str:
         client = self._client()
         message = client.messages.create(
             model=self.model,
@@ -143,12 +147,25 @@ class AssistantProvider:
         )
         return "".join(block.text for block in message.content if block.type == "text")
 
-    def _call_with_repair(self, system: str, user_payload: dict, schema_cls: type[BaseModel]):
+    def _call(self, system: str, user_payload: dict, *, status: str = "Waiting on assistant") -> str:
+        if not _status_console.is_terminal:
+            return self._invoke(system, user_payload)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold]{task.description}"),
+            TimeElapsedColumn(),
+            console=_status_console,
+            transient=True,
+        ) as progress:
+            progress.add_task(status, total=None)
+            return self._invoke(system, user_payload)
+
+    def _call_with_repair(self, system: str, user_payload: dict, schema_cls: type[BaseModel], *, activity: str):
         payload = {
             **user_payload,
             "output_schema": schema_cls.model_json_schema(),
         }
-        raw = self._call(system, payload)
+        raw = self._call(system, payload, status=f"Calling {activity}…")
         try:
             return schema_cls.model_validate_json(_extract_json(raw))
         except (ValidationError, json.JSONDecodeError) as first_error:
@@ -163,7 +180,7 @@ class AssistantProvider:
                 "validation_errors": errors,
                 "instruction": "Return corrected JSON only, matching the schema exactly.",
             }
-            repaired_raw = self._call(system, repair_payload)
+            repaired_raw = self._call(system, repair_payload, status=f"Repairing {activity} JSON…")
             try:
                 return schema_cls.model_validate_json(_extract_json(repaired_raw))
             except (ValidationError, json.JSONDecodeError) as second_error:
@@ -188,7 +205,9 @@ class AssistantProvider:
             "source_contents": request.source_contents,
             "allowed_paths": request.allowed_paths,
         }
-        draft = self._call_with_repair(_PLAN_SYSTEM_PROMPT, payload, DraftedChangePlan)
+        draft = self._call_with_repair(
+            _PLAN_SYSTEM_PROMPT, payload, DraftedChangePlan, activity="plan"
+        )
         return ChangePlan(
             schema_version=draft.schema_version,
             issue_path=Path("issue.md"),
@@ -208,7 +227,9 @@ class AssistantProvider:
             "plan": request.plan.model_dump(mode="json"),
             "source_contents": request.source_contents,
         }
-        draft = self._call_with_repair(_PROPOSAL_SYSTEM_PROMPT, payload, DraftedProposal)
+        draft = self._call_with_repair(
+            _PROPOSAL_SYSTEM_PROMPT, payload, DraftedProposal, activity="scaffold proposal"
+        )
         return ProposedChange(
             schema_version="1",
             plan_hash=draft.plan_hash,
