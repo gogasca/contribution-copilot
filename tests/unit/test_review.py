@@ -81,6 +81,19 @@ def test_advisory_finding_stays_visible_when_otherwise_ready() -> None:
     assert summary.unresolved_advisory == ["fyi"]
 
 
+def test_backslash_changed_paths_match_planned_files() -> None:
+    plan = _plan()
+    validation = ValidationReport(tier="fast", base_commit="abc123", input_file_hashes={}, findings=[])
+    summary = build_review(
+        plan=plan,
+        changed_files=[r"pkg\a.py", r"tests\t.py"],
+        validation=validation,
+        current_base_commit="abc123",
+    )
+    assert summary.ready
+    assert not summary.scope_drift
+
+
 def test_missing_or_stale_validation_blocks_ready() -> None:
     plan = _plan()
     summary = build_review(

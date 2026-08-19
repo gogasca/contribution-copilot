@@ -135,7 +135,129 @@ class AssistantProvider:
                 "The `anthropic` package is not installed",
                 remediation="Install the `assistant` extra: `uv sync --extra assistant`.",
             ) from exc
-        return anthropic.Anthropic(api_key=api_key, timeout=self.timeout_seconds)
+        # #region agent log
+        try:
+            import json as _dbg_json
+            import time as _dbg_time
+
+            _pkg = Path(next(iter(getattr(anthropic, "__path__", [])), "") or "")
+            _payload = {
+                "sessionId": "a73a26",
+                "runId": "pre-fix",
+                "hypothesisId": "B",
+                "location": "assistant.py:_client",
+                "message": "imported anthropic",
+                "data": {
+                    "file": getattr(anthropic, "__file__", None),
+                    "path": list(getattr(anthropic, "__path__", [])),
+                    "version": getattr(anthropic, "__version__", None),
+                    "has_Anthropic": hasattr(anthropic, "Anthropic"),
+                    "dir_caps": [n for n in dir(anthropic) if n[:1].isupper()][:20],
+                    "pkg_py_files": [p.name for p in _pkg.glob("*.py")] if _pkg.is_dir() else [],
+                    "pkg_init_exists": (_pkg / "__init__.py").exists() if _pkg else False,
+                    "is_namespace": getattr(anthropic, "__file__", None) is None,
+                },
+                "timestamp": int(_dbg_time.time() * 1000),
+            }
+            Path(
+                r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
+            ).open("a", encoding="utf-8").write(_dbg_json.dumps(_payload) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        if not hasattr(anthropic, "Anthropic"):
+            # #region agent log
+            try:
+                import json as _dbg_json
+                import time as _dbg_time
+
+                Path(
+                    r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
+                ).open("a", encoding="utf-8").write(
+                    _dbg_json.dumps(
+                        {
+                            "sessionId": "a73a26",
+                            "runId": "post-fix",
+                            "hypothesisId": "B",
+                            "location": "assistant.py:_client",
+                            "message": "raising incomplete anthropic package",
+                            "data": {"has_Anthropic": False, "is_namespace": True},
+                            "timestamp": int(_dbg_time.time() * 1000),
+                        }
+                    )
+                    + "\n"
+                )
+            except Exception:
+                pass
+            # #endregion
+            raise MissingContextError(
+                "The `anthropic` package is installed but incomplete (no Anthropic client)",
+                remediation=(
+                    "Reinstall the `assistant` extra: `uv sync --extra assistant`. "
+                    "If OneDrive reports Access denied, run `attrib -R .venv /S /D` and retry, "
+                    "or use `--provider fixture` for the offline demo."
+                ),
+            )
+        try:
+            client = anthropic.Anthropic(api_key=api_key, timeout=self.timeout_seconds)
+        except AttributeError as exc:
+            # #region agent log
+            try:
+                import json as _dbg_json
+                import time as _dbg_time
+
+                Path(
+                    r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
+                ).open("a", encoding="utf-8").write(
+                    _dbg_json.dumps(
+                        {
+                            "sessionId": "a73a26",
+                            "runId": "pre-fix",
+                            "hypothesisId": "E",
+                            "location": "assistant.py:_client",
+                            "message": "Anthropic attribute missing",
+                            "data": {"error": str(exc), "error_type": type(exc).__name__},
+                            "timestamp": int(_dbg_time.time() * 1000),
+                        }
+                    )
+                    + "\n"
+                )
+            except Exception:
+                pass
+            # #endregion
+            raise MissingContextError(
+                "The `anthropic` package is installed but incomplete (no Anthropic client)",
+                remediation=(
+                    "Reinstall the `assistant` extra: `uv sync --extra assistant`. "
+                    "If OneDrive reports Access denied, run `attrib -R .venv /S /D` and retry, "
+                    "or use `--provider fixture` for the offline demo."
+                ),
+            ) from exc
+        # #region agent log
+        try:
+            import json as _dbg_json
+            import time as _dbg_time
+
+            Path(
+                r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
+            ).open("a", encoding="utf-8").write(
+                _dbg_json.dumps(
+                    {
+                        "sessionId": "a73a26",
+                        "runId": "post-fix",
+                        "hypothesisId": "B",
+                        "location": "assistant.py:_client",
+                        "message": "Anthropic client constructed",
+                        "data": {"client_type": type(client).__name__},
+                        "timestamp": int(_dbg_time.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
+        return client
 
     def _invoke(self, system: str, user_payload: dict) -> str:
         client = self._client()
