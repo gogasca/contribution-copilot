@@ -1,0 +1,50 @@
+# Copy to <repo>/.contrib-pilot/config.toml and tighten the allowlists
+# to the files this contribution may read and change.
+#
+# This is generic policy for a Python package. The vLLM offline demo uses a
+# separate copy at demo/fixture/.contrib-pilot/config.toml — do not merge them.
+
+schema_version = "1"
+working_directory = ".contrib-pilot/runs"
+max_changed_files = 8
+max_changed_lines = 400
+
+# Files the planner/assistant may read. Keep this small: approved context
+# is the boundary, not the whole repository.
+[context]
+allowed_sources = [
+  "README.md",
+  "docs/**",
+  "src/**",
+  "tests/**",
+  "pyproject.toml",
+]
+
+# Files scaffold --apply may create or replace. Usually a subset of sources.
+[changes]
+allowed_paths = [
+  "src/**",
+  "tests/**",
+]
+
+# `definition` must be a key in contrib_pilot.validation.CHECK_REGISTRY.
+# config.toml cannot introduce a new executable.
+
+[[checks]]
+id = "focused-tests"
+tier = "fast"
+definition = "pytest-fast"
+timeout_seconds = 120
+
+[[checks]]
+id = "pre-commit"
+tier = "fast"
+definition = "project-pre-commit-changed-files"
+append_changed_files = true
+timeout_seconds = 90
+
+# Recorded as ci_required when there is no local command. CI still owns it.
+[[checks]]
+id = "integration"
+tier = "ci"
+ci_only = true

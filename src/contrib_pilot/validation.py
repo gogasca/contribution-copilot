@@ -64,6 +64,14 @@ CHECK_REGISTRY: dict[str, list[str]] = {
         "run",
         "--files",
     ],
+    # Generic default for examples/config.toml. Teams should replace this
+    # with a focused node-id command (see focused-import-utils-tests).
+    "pytest-fast": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+    ],
 }
 
 

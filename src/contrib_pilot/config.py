@@ -7,6 +7,7 @@ it whether a path is allowed rather than re-implementing the allowlist logic
 
 from __future__ import annotations
 
+import shutil
 import tomllib
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
@@ -16,6 +17,7 @@ from contrib_pilot.errors import BoundaryViolationError, InvalidInputError
 
 CONFIG_RELATIVE_PATH = Path(".contrib-pilot/config.toml")
 RUNS_RELATIVE_PATH = Path(".contrib-pilot/runs")
+EXAMPLE_CONFIG_RELATIVE = Path("examples/config.toml")
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,22 @@ class Config:
         return self._resolve_within_repo(relative_path)
 
 
+def example_config_template() -> Path:
+    """Return the generic policy shipped in this checkout.
+
+    ``src/contrib_pilot/config.py`` → repo root is two parents up.
+    """
+
+    checkout = Path(__file__).resolve().parents[2]
+    path = checkout / EXAMPLE_CONFIG_RELATIVE
+    if not path.is_file():
+        raise InvalidInputError(
+            f"Bundled example config not found at {path}",
+            remediation="Run from a contrib-pilot source checkout, or copy examples/config.toml manually.",
+        )
+    return path
+
+
 def find_config(start: Path) -> Path:
     candidate = start / CONFIG_RELATIVE_PATH
     if not candidate.is_file():
@@ -112,6 +130,25 @@ def find_config(start: Path) -> Path:
             remediation="Run `contrib-pilot init` from the repository root.",
         )
     return candidate
+
+
+def init_repo(repo_root: Path) -> tuple[Config, bool]:
+    """Ensure policy exists and create the ignored run directory.
+
+    Copies ``examples/config.toml`` only when the target has no config.
+    Never replaces an existing policy file (DESIGN.md init mutation class).
+    """
+
+    repo_root = repo_root.resolve()
+    config_path = repo_root / CONFIG_RELATIVE_PATH
+    created = False
+    if not config_path.is_file():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(example_config_template(), config_path)
+        created = True
+    config = load_config(repo_root)
+    config.working_directory.mkdir(parents=True, exist_ok=True)
+    return config, created
 
 
 def load_config(repo_root: Path) -> Config:

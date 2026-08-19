@@ -15,7 +15,7 @@ from rich.markdown import Markdown
 
 from contrib_pilot import commits, demo as demo_mod, generator, hooks as hooks_mod, orchestrator
 from contrib_pilot import patches, planner, reporting, review as review_mod, validation as validation_mod
-from contrib_pilot.config import Config, load_config
+from contrib_pilot.config import Config, init_repo, load_config
 from contrib_pilot.errors import ContribPilotError
 from contrib_pilot.git import base_commit, changed_paths, repo_root as git_repo_root, staged_paths
 from contrib_pilot.models import ChangePlan, ProposedChange, ReviewSummary, ValidationReport
@@ -85,12 +85,14 @@ def _handle_errors(fn):
 @app.command()
 @_handle_errors
 def init(path: Path = typer.Option(None, "--path", help="Repository path (default: cwd)")) -> None:
-    """Validate configuration and create the ignored run directory."""
+    """Copy the example policy if missing, then create the ignored run directory."""
 
     repo = _resolve_repo(path)
-    config = _load_config(repo)
-    config.working_directory.mkdir(parents=True, exist_ok=True)
-    console.print(f"[green]OK[/green] {repo} initialized. Config: schema v{config.schema_version}.")
+    config, created = init_repo(repo)
+    copied = " (from examples/config.toml)" if created else ""
+    console.print(
+        f"[green]OK[/green] {repo} initialized. Config: schema v{config.schema_version}{copied}."
+    )
 
 
 @app.command()

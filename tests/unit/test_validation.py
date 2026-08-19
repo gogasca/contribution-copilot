@@ -27,3 +27,10 @@ def test_focused_tests_skip_conftest() -> None:
     command = _resolve_command(check, [])
     assert "--noconftest" in command
     assert CHECK_REGISTRY["focused-import-utils-tests"][-1] == "--noconftest"
+
+
+def test_pytest_fast_is_generic_pytest() -> None:
+    check = CheckDefinition(id="focused-tests", tier="fast", definition="pytest-fast")
+    command = _resolve_command(check, [])
+    assert command[-2:] == ["pytest", "-q"]
+    assert "--noconftest" not in command

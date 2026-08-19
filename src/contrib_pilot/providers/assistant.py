@@ -27,8 +27,8 @@ _status_console = Console(stderr=True)
 
 DEFAULT_MODEL = "claude-sonnet-5"
 DEFAULT_CREDENTIAL_ENV_VAR = "ANTHROPIC_API_KEY"
-DEFAULT_TIMEOUT_SECONDS = 60
-DEFAULT_MAX_OUTPUT_TOKENS = 8_000
+DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_MAX_OUTPUT_TOKENS = 32_000
 
 
 class DraftedChangePlan(BaseModel):
@@ -135,61 +135,7 @@ class AssistantProvider:
                 "The `anthropic` package is not installed",
                 remediation="Install the `assistant` extra: `uv sync --extra assistant`.",
             ) from exc
-        # #region agent log
-        try:
-            import json as _dbg_json
-            import time as _dbg_time
-
-            _pkg = Path(next(iter(getattr(anthropic, "__path__", [])), "") or "")
-            _payload = {
-                "sessionId": "a73a26",
-                "runId": "pre-fix",
-                "hypothesisId": "B",
-                "location": "assistant.py:_client",
-                "message": "imported anthropic",
-                "data": {
-                    "file": getattr(anthropic, "__file__", None),
-                    "path": list(getattr(anthropic, "__path__", [])),
-                    "version": getattr(anthropic, "__version__", None),
-                    "has_Anthropic": hasattr(anthropic, "Anthropic"),
-                    "dir_caps": [n for n in dir(anthropic) if n[:1].isupper()][:20],
-                    "pkg_py_files": [p.name for p in _pkg.glob("*.py")] if _pkg.is_dir() else [],
-                    "pkg_init_exists": (_pkg / "__init__.py").exists() if _pkg else False,
-                    "is_namespace": getattr(anthropic, "__file__", None) is None,
-                },
-                "timestamp": int(_dbg_time.time() * 1000),
-            }
-            Path(
-                r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
-            ).open("a", encoding="utf-8").write(_dbg_json.dumps(_payload) + "\n")
-        except Exception:
-            pass
-        # #endregion
         if not hasattr(anthropic, "Anthropic"):
-            # #region agent log
-            try:
-                import json as _dbg_json
-                import time as _dbg_time
-
-                Path(
-                    r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
-                ).open("a", encoding="utf-8").write(
-                    _dbg_json.dumps(
-                        {
-                            "sessionId": "a73a26",
-                            "runId": "post-fix",
-                            "hypothesisId": "B",
-                            "location": "assistant.py:_client",
-                            "message": "raising incomplete anthropic package",
-                            "data": {"has_Anthropic": False, "is_namespace": True},
-                            "timestamp": int(_dbg_time.time() * 1000),
-                        }
-                    )
-                    + "\n"
-                )
-            except Exception:
-                pass
-            # #endregion
             raise MissingContextError(
                 "The `anthropic` package is installed but incomplete (no Anthropic client)",
                 remediation=(
@@ -201,30 +147,6 @@ class AssistantProvider:
         try:
             client = anthropic.Anthropic(api_key=api_key, timeout=self.timeout_seconds)
         except AttributeError as exc:
-            # #region agent log
-            try:
-                import json as _dbg_json
-                import time as _dbg_time
-
-                Path(
-                    r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
-                ).open("a", encoding="utf-8").write(
-                    _dbg_json.dumps(
-                        {
-                            "sessionId": "a73a26",
-                            "runId": "pre-fix",
-                            "hypothesisId": "E",
-                            "location": "assistant.py:_client",
-                            "message": "Anthropic attribute missing",
-                            "data": {"error": str(exc), "error_type": type(exc).__name__},
-                            "timestamp": int(_dbg_time.time() * 1000),
-                        }
-                    )
-                    + "\n"
-                )
-            except Exception:
-                pass
-            # #endregion
             raise MissingContextError(
                 "The `anthropic` package is installed but incomplete (no Anthropic client)",
                 remediation=(
@@ -233,41 +155,39 @@ class AssistantProvider:
                     "or use `--provider fixture` for the offline demo."
                 ),
             ) from exc
-        # #region agent log
-        try:
-            import json as _dbg_json
-            import time as _dbg_time
-
-            Path(
-                r"c:\Users\gogas\OneDrive\Documents\CursorProjects\copilot\contribution-copilot\debug-a73a26.log"
-            ).open("a", encoding="utf-8").write(
-                _dbg_json.dumps(
-                    {
-                        "sessionId": "a73a26",
-                        "runId": "post-fix",
-                        "hypothesisId": "B",
-                        "location": "assistant.py:_client",
-                        "message": "Anthropic client constructed",
-                        "data": {"client_type": type(client).__name__},
-                        "timestamp": int(_dbg_time.time() * 1000),
-                    }
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         return client
 
     def _invoke(self, system: str, user_payload: dict) -> str:
         client = self._client()
-        message = client.messages.create(
-            model=self.model,
-            max_tokens=self.max_output_tokens,
-            system=system,
-            messages=[{"role": "user", "content": json.dumps(user_payload)}],
-        )
-        return "".join(block.text for block in message.content if block.type == "text")
+        create_kwargs: dict = {
+            "model": self.model,
+            "max_tokens": self.max_output_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": json.dumps(user_payload)}],
+        }
+        try:
+            # Sonnet 5 enables adaptive thinking by default; thinking tokens
+            # count against max_tokens and truncate the JSON payload.
+            message = client.messages.create(
+                **create_kwargs,
+                thinking={"type": "disabled"},
+            )
+        except TypeError:
+            message = client.messages.create(**create_kwargs)
+        except Exception as exc:
+            if "thinking" not in str(exc).lower():
+                raise
+            message = client.messages.create(**create_kwargs)
+        text = "".join(block.text for block in message.content if block.type == "text")
+        if getattr(message, "stop_reason", None) == "max_tokens":
+            raise MissingContextError(
+                "Assistant output was truncated at max_tokens before the JSON completed",
+                remediation=(
+                    "Retry with `--provider assistant`, or use `--provider fixture` "
+                    "for the offline demo."
+                ),
+            )
+        return text
 
     def _call(self, system: str, user_payload: dict, *, status: str = "Waiting on assistant") -> str:
         if not _status_console.is_terminal:

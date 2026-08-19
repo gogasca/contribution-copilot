@@ -24,6 +24,9 @@ dev = [
     # run the fixture's own tests, not by contrib-pilot itself.
     "regex>=2024.5",
     "typing-extensions>=4.12",
+    # Same SDK as extra `assistant`. Listed here so `uv sync` keeps it
+    # installed; OneDrive locks `.venv` metadata dirs and uv cannot uninstall.
+    "anthropic>=0.34",
 ]
 
 [project.scripts]

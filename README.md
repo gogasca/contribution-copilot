@@ -54,7 +54,7 @@ Setup prefix from the repo root: `uv run contrib-pilot …`
 |---|---|---|
 | `doctor` | Checks Python, Git, fixture config, and the demo manifest. Does not change files. | none |
 | `demo reset` | Recreates `demo/workspace/` from `demo/fixture/`. | none |
-| `init` | Validates `config.toml` and creates the ignored run directory. Used on a real clone, not required for the bundled demo. | `--path` repo (default: cwd) |
+| `init` | Copies `examples/config.toml` if the target has no policy, then creates the ignored run directory. Used on a real clone, not required for the bundled demo. | `--path` repo (default: cwd) |
 
 ### Contribution flow (`demo/workspace`)
 
@@ -85,5 +85,7 @@ Run these in order, or use `run` to do them in one pass:
 | `hooks uninstall` | Restores the previous hooks path. | none |
 | `commit prepare` | Suggests a commit message and prints `git add` / `git commit` lines. Never stages or commits. | none |
 | `hook NAME` | Invoked by installed hook scripts (`pre-commit`, `commit-msg`, `pre-push`), not by a human. | `NAME` |
+
+A generic starting policy (not the vLLM demo) lives in [`examples/`](examples/README.md).
 
 See CUJS.md's Developer Quickstart for the full clone-to-PR flow, and plan.MD's Installation, E2E, and Reset Contract for the offline-demo guarantees.
