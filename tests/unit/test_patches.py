@@ -84,6 +84,16 @@ def test_apply_proposal_rejects_stale_base(repo: Path) -> None:
         apply_proposal(config, plan, proposal)
 
 
+def test_check_base_state_accepts_crlf_when_plan_hashed_bytes(repo: Path) -> None:
+    import hashlib
+
+    path = repo / "pkg" / "a.py"
+    path.write_bytes(b"x = 1\r\n")
+    config = load_config(repo)
+    plan = _plan(repo, base_hash=hashlib.sha256(path.read_bytes()).hexdigest())
+    assert check_base_state(config, plan).ok
+
+
 def test_apply_proposal_writes_file_and_never_overwrites_without_matching_base(repo: Path) -> None:
     config = load_config(repo)
     plan = _plan(repo, base_hash=_current_hash(repo))
