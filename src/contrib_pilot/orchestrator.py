@@ -19,7 +19,7 @@ from pathlib import Path
 from contrib_pilot import generator, patches, planner, reporting, review as review_mod, validation as validation_mod
 from contrib_pilot.config import Config
 from contrib_pilot.errors import StaleStateError
-from contrib_pilot.git import base_commit, changed_paths
+from contrib_pilot.git import base_commit, contribution_changed_paths
 from contrib_pilot.models import (
     ApprovalRecord,
     ChangePlan,
@@ -197,7 +197,7 @@ def run(
     # --- validate ---
     validation_report: ValidationReport
     if state.stage is Stage.APPLIED:
-        changed = changed_paths(config.repo_root)
+        changed = contribution_changed_paths(config.repo_root, issue_path=plan.issue_path)
         validation_report = validation_mod.validate(
             config=config, plan=plan, tier="fast", changed_files=changed, base_commit=commit
         )
@@ -224,7 +224,7 @@ def run(
     # --- review ---
     review_summary: ReviewSummary
     if state.stage is Stage.VALIDATED:
-        changed = changed_paths(config.repo_root)
+        changed = contribution_changed_paths(config.repo_root, issue_path=plan.issue_path)
         review_summary = review_mod.build_review(
             plan=plan, changed_files=changed, validation=validation_report, current_base_commit=commit
         )
