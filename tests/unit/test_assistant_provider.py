@@ -109,3 +109,15 @@ def test_create_proposal_accepts_draft(monkeypatch: pytest.MonkeyPatch) -> None:
     assert proposal.summary.startswith("Guard")
     assert proposal.files[0].path == Path("vllm/utils/import_utils.py")
     assert isinstance(proposal.files[0], ProposedFile)
+
+
+def test_client_raises_when_anthropic_is_incomplete(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import types
+
+    fake = types.ModuleType("anthropic")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    with pytest.raises(MissingContextError, match="incomplete"):
+        AssistantProvider()._client()

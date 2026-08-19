@@ -62,7 +62,9 @@ def check_base_state(config: Config, plan: ChangePlan) -> BaseStateCheck:
     changed: list[str] = []
     for path_str, expected_hash in plan.base_file_hashes.items():
         resolved = config.repo_root / path_str
-        current = _sha256_text(_current_text(resolved)) if resolved.is_file() else "<missing>"
+        # Hash raw bytes, matching planner/context.file_hash. read_text()
+        # translates CRLF to LF on Windows, which would false-stale every apply.
+        current = hashlib.sha256(resolved.read_bytes()).hexdigest() if resolved.is_file() else "<missing>"
         if current != expected_hash:
             changed.append(path_str)
     return BaseStateCheck(ok=not changed, changed_paths=changed)

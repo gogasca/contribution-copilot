@@ -211,6 +211,7 @@ def validate(
     base_ref: str = typer.Option(None, "--base-ref"),
     non_interactive: bool = typer.Option(False, "--non-interactive"),
 ) -> None:
+    """Run checks (tests). Does not decide whether the diff matches the plan."""
     repo = _resolve_repo(None)
     config = _load_config(repo)
     plan_obj = _load_plan(config)
@@ -243,6 +244,7 @@ def validate(
 @app.command()
 @_handle_errors
 def review() -> None:
+    """Check that the current diff still matches the plan. Does not re-run tests."""
     repo = _resolve_repo(None)
     config = _load_config(repo)
     plan_obj = _load_plan(config)
@@ -262,9 +264,21 @@ def review() -> None:
     )
     (run_dir / "review.json").write_text(summary.model_dump_json(indent=2), encoding="utf-8")
 
+    _DRIFT_LABEL = {
+        "unplanned_file": "changed, but not in the plan",
+        "missing_planned_test": "planned test file was not changed",
+    }
+    console.print("[dim]Review asks: does this diff still match the plan?[/dim]")
     console.print(f"Ready: [bold]{summary.ready}[/bold]")
+    if not summary.scope_drift:
+        console.print("- plan match: all changed files are in the plan")
     for entry in summary.scope_drift:
-        console.print(f"- drift: {entry.path} ({entry.reason})")
+        label = _DRIFT_LABEL.get(entry.reason, entry.reason)
+        console.print(f"- drift: `{entry.path}` ({label})")
+    if summary.validation_stale:
+        console.print("- validation: stale or missing — re-run `validate`")
+    elif validation_report is not None:
+        console.print("- validation: fresh (not re-run; using last validate result)")
     for item in summary.unresolved_blocking:
         console.print(f"- blocking: {item}")
     for item in summary.unresolved_advisory:
@@ -433,7 +447,7 @@ app.add_typer(demo_app, name="demo")
 @demo_app.command("reset")
 @_handle_errors
 def demo_reset() -> None:
-    repo = _resolve_repo(None)
+    repo = demo_mod.docs_repo_root(Path.cwd())
     preview = demo_mod.reset(repo / "demo")
     console.print(f"[green]OK[/green] reset {len(preview.changed_files)} file(s) under {preview.target}")
 
@@ -441,7 +455,9 @@ def demo_reset() -> None:
 @app.command()
 @_handle_errors
 def doctor() -> None:
-    repo = _resolve_repo(None)
+    """Check setup. Safe to run from the repo root or from demo/workspace."""
+
+    repo = demo_mod.docs_repo_root(Path.cwd())
     checks = demo_mod.run_doctor(repo)
     all_ok = True
     for check in checks:

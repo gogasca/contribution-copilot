@@ -97,8 +97,10 @@ def render_markdown(inputs: ReportInputs) -> str:
         lines.append("**Ready** — no blocking findings, no scope drift, validation is fresh.")
     else:
         lines.append("**Not ready.** Remaining issues:")
-        for item in [*inputs.review.unresolved_blocking, *[e.reason for e in inputs.review.scope_drift]]:
+        for item in inputs.review.unresolved_blocking:
             lines.append(f"- {item}")
+        for entry in inputs.review.scope_drift:
+            lines.append(f"- `{entry.path}` ({entry.reason})")
 
     return "\n".join(lines) + "\n"
 

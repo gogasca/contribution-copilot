@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import filecmp
 import json
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -20,6 +22,21 @@ from contrib_pilot.config import find_config
 from contrib_pilot.errors import InvalidInputError
 
 WORKSPACE_MARKER = ".contrib-pilot-demo-workspace"
+
+
+def docs_repo_root(start: Path) -> Path:
+    """Locate the package checkout that contains ``demo/fixture-manifest.json``.
+
+    ``demo/workspace`` is its own git repo, so ``git rev-parse --show-toplevel``
+    from there is the workspace, not the contrib-pilot checkout. Doctor and
+    ``demo reset`` must climb to the checkout that owns the immutable fixture.
+    """
+
+    current = start.resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / "demo" / "fixture-manifest.json").is_file():
+            return candidate
+    return current
 
 
 @dataclass
@@ -52,11 +69,57 @@ def preview_reset(demo_dir: Path) -> ResetPreview:
     return ResetPreview(source=source, target=target, changed_files=changed)
 
 
+def _force_rmtree(path: Path) -> None:
+    """Remove a directory tree, including Windows ReadOnly files and folders.
+
+    OneDrive and git objects commonly set FILE_ATTRIBUTE_READONLY. Plain
+    ``shutil.rmtree`` then fails with WinError 5 on ``os.rmdir`` / ``os.unlink``.
+    """
+
+    def _onexc(func, p, exc):  # type: ignore[no-untyped-def]
+        if not isinstance(exc, PermissionError):
+            raise exc
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    shutil.rmtree(path, onexc=_onexc)
+
+
+def _clear_directory_contents(path: Path) -> None:
+    """Delete children of ``path`` but keep ``path`` itself.
+
+    Required on Windows when the shell cwd is the demo workspace: ``rmtree``
+    of that directory fails with WinError 32 (directory in use).
+    """
+
+    for child in list(path.iterdir()):
+        if child.is_dir() and not child.is_symlink():
+            _force_rmtree(child)
+        else:
+            try:
+                os.chmod(child, stat.S_IWRITE)
+            except OSError:
+                pass
+            child.unlink()
+
+
+def _is_replaceable_workspace(target: Path, source: Path) -> bool:
+    """True when ``target`` is ours, empty after a failed reset, or only fixture leftovers."""
+
+    if (target / WORKSPACE_MARKER).is_file():
+        return True
+    names = {child.name for child in target.iterdir()}
+    if not names:
+        return True
+    allowed = {WORKSPACE_MARKER, ".git"} | {child.name for child in source.iterdir()}
+    return names <= allowed
+
+
 def reset(demo_dir: Path) -> ResetPreview:
     preview = preview_reset(demo_dir)
     target = preview.target
 
-    if target.is_dir() and not (target / WORKSPACE_MARKER).is_file():
+    if target.is_dir() and not _is_replaceable_workspace(target, preview.source):
         raise InvalidInputError(
             f"{target} does not look like a managed demo workspace "
             "(missing marker file); refusing to reset it.",
@@ -64,9 +127,12 @@ def reset(demo_dir: Path) -> ResetPreview:
         )
 
     if target.is_dir():
-        shutil.rmtree(target)
+        _clear_directory_contents(target)
     shutil.copytree(
-        preview.source, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+        preview.source,
+        target,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        dirs_exist_ok=True,
     )
     (target / WORKSPACE_MARKER).write_text("managed by `contrib-pilot demo reset`\n")
     _init_workspace_repo(target)

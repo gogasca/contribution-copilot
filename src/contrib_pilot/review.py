@@ -12,6 +12,10 @@ from contrib_pilot.models import ChangePlan, ReviewSummary, ScopeDriftEntry, Sev
 from pathlib import Path
 
 
+def _posix(path: str | Path) -> str:
+    return Path(str(path)).as_posix()
+
+
 def build_review(
     *,
     plan: ChangePlan,
@@ -19,17 +23,18 @@ def build_review(
     validation: ValidationReport | None,
     current_base_commit: str,
 ) -> ReviewSummary:
-    planned_impl = {str(p) for p in plan.implementation_files}
-    planned_tests = {str(p) for p in plan.test_files}
+    planned_impl = {_posix(p) for p in plan.implementation_files}
+    planned_tests = {_posix(p) for p in plan.test_files}
     planned = planned_impl | planned_tests
+    changed_set = {_posix(p) for p in changed_files}
 
     drift: list[ScopeDriftEntry] = []
-    for changed in changed_files:
+    for changed in changed_set:
         if changed not in planned:
             drift.append(ScopeDriftEntry(path=Path(changed), reason="unplanned_file"))
 
-    touched_impl = bool(planned_impl & set(changed_files))
-    touched_tests = bool(planned_tests & set(changed_files))
+    touched_impl = bool(planned_impl & changed_set)
+    touched_tests = bool(planned_tests & changed_set)
     if touched_impl and planned_tests and not touched_tests:
         drift.append(
             ScopeDriftEntry(
@@ -51,12 +56,10 @@ def build_review(
             if result.status is Severity.BLOCKING:
                 unresolved_blocking.append(f"{result.check_id} failed")
 
-    changed_set = set(changed_files)
-
     def _covered(criterion) -> bool:
         # planned_tests may be plain file paths or pytest node ids
         # ("file.py::Class::method") — compare on the file portion only.
-        planned_test_files = {test.split("::", 1)[0] for test in criterion.planned_tests}
+        planned_test_files = {_posix(test.split("::", 1)[0]) for test in criterion.planned_tests}
         return bool(planned_test_files & changed_set) or bool(planned_test_files & planned_tests)
 
     acceptance_coverage = {criterion.id: _covered(criterion) for criterion in plan.acceptance_criteria}

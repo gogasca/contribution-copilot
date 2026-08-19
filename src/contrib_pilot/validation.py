@@ -20,7 +20,25 @@ from contrib_pilot.config import CheckDefinition, Config
 from contrib_pilot.models import ChangePlan, CommandResult, Finding, Severity, ValidationReport
 
 MAX_OUTPUT_BYTES = 20_000
-_ALLOWED_ENV_KEYS = ("PATH", "LANG", "LC_ALL", "TMPDIR", "HOME", "VIRTUAL_ENV")
+_ALLOWED_ENV_KEYS = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "HOME",
+    "VIRTUAL_ENV",
+    # Windows Winsock/asyncio need these. Omitting SYSTEMROOT makes
+    # `import unittest.mock` raise WinError 10106, so focused pytest
+    # collection fails before any test runs.
+    "SYSTEMROOT",
+    "WINDIR",
+    "SYSTEMDRIVE",
+    "COMSPEC",
+    "PATHEXT",
+    "USERPROFILE",
+)
 
 # Checked-in registry: check "definition" -> argument template. `{python}` is
 # substituted with the active interpreter; `{changed_files}` is substituted
@@ -50,9 +68,10 @@ CHECK_REGISTRY: dict[str, list[str]] = {
 
 
 def _sanitized_env() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k in _ALLOWED_ENV_KEYS}
-    # The assistant extra pulls in anyio, whose pytest plugin imports asyncio
-    # and crashes some Windows Store Pythons (WinError 10106) before tests run.
+    allowed = {key.upper() for key in _ALLOWED_ENV_KEYS}
+    env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
+    # Keep pytest from auto-loading third-party plugins (e.g. anyio) that are
+    # installed into this interpreter but are unrelated to the focused tests.
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     return env
 
