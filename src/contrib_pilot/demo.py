@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import filecmp
 import json
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -52,6 +54,22 @@ def preview_reset(demo_dir: Path) -> ResetPreview:
     return ResetPreview(source=source, target=target, changed_files=changed)
 
 
+def _force_rmtree(path: Path) -> None:
+    """Remove a directory tree, including Windows ReadOnly files and folders.
+
+    OneDrive and git objects commonly set FILE_ATTRIBUTE_READONLY. Plain
+    ``shutil.rmtree`` then fails with WinError 5 on ``os.rmdir`` / ``os.unlink``.
+    """
+
+    def _onexc(func, p, exc):  # type: ignore[no-untyped-def]
+        if not isinstance(exc, PermissionError):
+            raise exc
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    shutil.rmtree(path, onexc=_onexc)
+
+
 def reset(demo_dir: Path) -> ResetPreview:
     preview = preview_reset(demo_dir)
     target = preview.target
@@ -64,7 +82,7 @@ def reset(demo_dir: Path) -> ResetPreview:
         )
 
     if target.is_dir():
-        shutil.rmtree(target)
+        _force_rmtree(target)
     shutil.copytree(
         preview.source, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
     )

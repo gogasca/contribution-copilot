@@ -1,3 +1,5 @@
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -38,5 +40,14 @@ def test_reset_refuses_unmanaged_directory(demo_dir: Path) -> None:
 def test_reset_is_idempotent(demo_dir: Path) -> None:
     reset(demo_dir)
     (demo_dir / "workspace" / "pkg" / "a.py").write_text("x = 999\n", encoding="utf-8")
+    reset(demo_dir)
+    assert (demo_dir / "workspace" / "pkg" / "a.py").read_text() == "x = 1\n"
+
+
+def test_reset_removes_readonly_empty_run_dir(demo_dir: Path) -> None:
+    reset(demo_dir)
+    current = demo_dir / "workspace" / ".contrib-pilot" / "runs" / "current"
+    current.mkdir(parents=True, exist_ok=True)
+    os.chmod(current, stat.S_IREAD)
     reset(demo_dir)
     assert (demo_dir / "workspace" / "pkg" / "a.py").read_text() == "x = 1\n"
