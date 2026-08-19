@@ -45,7 +45,7 @@ def test_extract_json_strips_markdown_fences() -> None:
 
 def test_create_plan_accepts_draft_without_engine_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = AssistantProvider()
-    monkeypatch.setattr(provider, "_call", lambda system, payload: json.dumps(_valid_draft()))
+    monkeypatch.setattr(provider, "_call", lambda system, payload, **_kwargs: json.dumps(_valid_draft()))
 
     plan = provider.create_plan(_request())
 
@@ -63,7 +63,7 @@ def test_create_plan_repairs_string_criteria(monkeypatch: pytest.MonkeyPatch) ->
         json.dumps({"title": "Improve errors", "acceptance_criteria": ["Empty names raise ValueError"]}),
         json.dumps(_valid_draft()),
     ]
-    monkeypatch.setattr(provider, "_call", lambda system, payload: calls.pop(0))
+    monkeypatch.setattr(provider, "_call", lambda system, payload, **_kwargs: calls.pop(0))
 
     plan = provider.create_plan(_request())
     assert plan.acceptance_criteria[0].text == "Empty names raise ValueError"
@@ -75,7 +75,7 @@ def test_create_plan_raises_after_failed_repair(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(
         provider,
         "_call",
-        lambda system, payload: json.dumps({"acceptance_criteria": ["not an object"]}),
+        lambda system, payload, **_kwargs: json.dumps({"acceptance_criteria": ["not an object"]}),
     )
 
     with pytest.raises(MissingContextError, match="did not match the required schema"):
@@ -94,7 +94,7 @@ def test_create_proposal_accepts_draft(monkeypatch: pytest.MonkeyPatch) -> None:
         ],
         "summary": "Guard malformed qualnames.",
     }
-    monkeypatch.setattr(provider, "_call", lambda system, payload: json.dumps(body))
+    monkeypatch.setattr(provider, "_call", lambda system, payload, **_kwargs: json.dumps(body))
 
     plan = ChangePlan(
         issue_path=Path("issue.md"),

@@ -105,6 +105,7 @@ def plan(
     prov = _select_provider(provider, config)
     commit = base_commit(repo)
 
+    err_console.print(f"[dim]Generating plan with [bold]{provider}[/bold]…[/dim]")
     result = planner.build_plan(
         config=config,
         issue_path=issue,
@@ -174,6 +175,7 @@ def scaffold(
 
     if dry_run:
         prov = _select_provider(provider, config)
+        err_console.print(f"[dim]Generating proposal with [bold]{provider}[/bold]…[/dim]")
         proposal = generator.build_proposal(config=config, plan=plan_obj, provider=prov)
         diff_text = patches.render_unified_diff(config, proposal)
         (run_dir / "proposal.json").write_text(proposal.model_dump_json(indent=2), encoding="utf-8")
