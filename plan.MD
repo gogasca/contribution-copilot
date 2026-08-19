@@ -119,6 +119,7 @@ The artifact will produce:
 
 - A structured implementation and test plan before material file changes.
 - A proposed unified diff for implementation and test scaffolding.
+- Plan-time convention constraints (typing, lint policy, allowed libraries) that bind scaffold, distinct from behavioral acceptance criteria.
 - Convention, deprecated-API, anti-pattern, boundary, and test-quality findings.
 - Commands and results aligned with vLLM's existing lint, test, and CI configuration.
 - A record of consulted sources, assumptions, approvals, validation results, risks, and limitations.
@@ -164,8 +165,8 @@ The README will demonstrate both a terminal flow and an IDE flow: open the issue
 
 Scaffolding is a proposal workflow, not silent code generation.
 
-1. `plan` produces a structured plan containing acceptance criteria, consulted sources, proposed files, test mapping, assumptions, and CI-only requirements.
-2. `scaffold --dry-run` produces a unified diff without changing tracked files.
+1. `plan` produces a structured plan containing acceptance criteria, consulted sources, proposed files, test mapping, assumptions, CI-only requirements, and engine-stamped convention constraints (applicable rule IDs, observed imports, lint policy summary).
+2. `scaffold --dry-run` produces a unified diff without changing tracked files. The proposal must follow the plan's convention constraints; the engine rechecks imports and path scope before the diff is written.
 3. The user reviews the diff in the terminal or IDE and may edit the plan or reject the proposal.
 4. `scaffold --apply` verifies that the repository still matches the recorded base state, asks for explicit approval, applies the patch, and records the approval.
 5. `review` compares the current working-tree diff with the approved plan and flags scope drift, unrelated edits, missing tests, and unresolved findings.
@@ -184,12 +185,13 @@ Deterministic responsibilities:
 - File hashing, patch preview/application, and scope-drift detection.
 - Command execution, exit-code capture, and report assembly.
 - Hard checks such as prohibited paths, missing required evidence, and failed tests.
+- Convention stamping: `applicable_rules`, `observed_imports`, and `lint_checks` on `ChangePlan`; AST import inventory; scaffold refusal of new third-party imports when configured.
 
 Assistant-supported responsibilities:
 
 - Interpreting the issue and proposing an implementation plan.
 - Selecting representative nearby patterns from approved context.
-- Suggesting implementation and test changes.
+- Suggesting implementation and test changes that follow engine-stamped convention constraints.
 - Explaining advisory quality findings and tradeoffs.
 
 Use structured schemas for plan, findings, validation results, and reports. All provider responses are untrusted input: validate their schema, paths, commands, source references, and size before use.
@@ -230,6 +232,113 @@ Disallowed context:
 The tool records every consulted source. It fails clearly when required information is unavailable or access falls outside the approved boundary. The nearest applicable repository instructions and domain-specific contribution guidance must be discovered before a plan is proposed.
 
 The Python engine is the only component permitted to read governed context. It resolves and validates a path before opening it, rejects symlinks that resolve outside the repository, bounds individual and total context size, and supplies approved content to the provider. Provider-returned paths never authorize new reads.
+
+## Typing, Lint, and Package Conventions at Plan and Scaffold Time
+
+Behavioral acceptance criteria stay numbered in `issue.md` and mapped to tests. Typing style, linter policy, and library choice are **conventions**. They must not be extra acceptance criteria (there is no fair failing test for "use good typing"). They are injected at `plan`, bound at `scaffold`, and enforced later by `validate`.
+
+This is an extension of Phase 2, not a third validation tier and not a new CLI command.
+
+### Why plan and scaffold, not only validate
+
+`validate` is the right place to **run** Ruff/pre-commit on applied files. If conventions appear only then, the assistant can emit `Optional[int]`, a new third-party import, or an unused name, and the contributor pays an extra edit cycle.
+
+`plan` is the right place to **name** which reviewed rules apply and which libraries already exist in approved sources. `scaffold` is the right place to **generate** against those constraints so the first diff is already convention-shaped. `validate` remains the only stage that executes linters.
+
+Do not run Ruff, mypy, or pip inside `plan` or `scaffold`. Those stages must not mutate files, must not introduce commands from issue or provider text, and must stay offline.
+
+### Three products, two owners
+
+| Product | Meaning | Owner | Plan | Scaffold | Validate |
+| --- | --- | --- | --- | --- | --- |
+| Lint policy | Project Ruff/pre-commit IDs already selected by the repo (`E`, `F`, `UP`, `I`, …) | `CHECK_REGISTRY` + `[[checks]]` with `project-pre-commit-changed-files` | Record the check ids that `validate` will run; parse `[tool.ruff.lint].select` from an allowlisted `pyproject.toml` into a short policy summary | Include that summary in the proposal request so generated text prefers PEP 604 unions, builtin generics, and isort-compatible imports | Execute pre-commit/Ruff on changed files |
+| Typing rules | Small, reviewed heuristics Ruff may miss (`Any` on a new public API; `Optional[X]` when neighbors use `X \| None`) | `RULE_REGISTRY` in engine code; `config.toml` only names rule IDs | Stamp `applicable_rules` from config, never from the provider | Pass the same IDs into `ProposalRequest`; assistant follows them | Emit `advisory` `Finding` records with path, line, evidence, remediation |
+| Package recommendation | Reuse libraries already imported in approved implementation sources; do not add a dependency | Deterministic import inventory from allowlisted files | Record `observed_imports` (stdlib / first-party / third-party already present) | Reject or flag a proposed import that is not in that set and not stdlib/first-party | Same heuristic on the applied tree; never search PyPI or the web |
+
+Package "recommendation" is closed-world: recommend symbols already in `scheduler.py` / `speculative.py` (or whichever files are approved). Arbitrary web retrieval and "suggest a new PyPI package" remain disallowed context.
+
+### Schema and configuration
+
+Extend `ChangePlan` (schema_version bump is allowed) with engine-owned fields the provider must not author:
+
+- `applicable_rules`: rule IDs copied from config after provider return, the same way `issue_path` and `sources` are stamped today.
+- `observed_imports`: sorted import names extracted from approved implementation sources.
+- `lint_checks`: check IDs from `config.checks` whose `definition` is a lint/pre-commit registry key.
+
+`PlanRequest` and `ProposalRequest` carry the same three fields so both providers see them. `FixtureProvider` ignores them except as frozen expected JSON. `AssistantProvider` receives them as extra prompt context, still with no tools and no extra file reads.
+
+`config.toml` selects rules; it does not define regexes or command arrays:
+
+```toml
+[context]
+allowed_sources = [
+  "vllm/v1/core/sched/scheduler.py",
+  "vllm/config/speculative.py",
+  "AGENTS.md",
+  "pyproject.toml",
+  ".pre-commit-config.yaml",
+]
+
+[conventions]
+rules = [
+  "typing.pep604-union",
+  "typing.builtin-generics",
+  "typing.any-on-new-api",
+  "libs.no-new-third-party",
+  "hints.google-docstring",
+]
+
+[[checks]]
+id = "pre-commit"
+tier = "fast"
+definition = "project-pre-commit-changed-files"
+append_changed_files = true
+timeout_seconds = 90
+```
+
+`RULE_REGISTRY` lives next to `CHECK_REGISTRY`. Introducing a new rule ID is a code review, not an issue.md edit. Default severity is `advisory`. `libs.no-new-third-party` may be `blocking` at scaffold revalidation when the import is clearly third-party and absent from `observed_imports`; ambiguous cases stay advisory.
+
+### Planner behavior (`planner.py`)
+
+1. Discover convention sources with explicit purposes (`typing-and-lint convention`, `ruff policy`, `agent instructions`) when those paths are in `allowed_sources`. Missing optional convention files are skipped; missing required implementation sources still fail loudly.
+2. Parse numbered acceptance criteria as today. A `## Conventions` section in `issue.md` is free text only — no numbered list, so it cannot become an AC.
+3. Extract `observed_imports` with the stdlib `ast` module from approved implementation sources. Do not execute those files.
+4. Call the provider with issue text, AC hint, sources, `applicable_rules`, `observed_imports`, and `lint_checks`.
+5. On return, **overwrite** `applicable_rules`, `observed_imports`, and `lint_checks` from the engine. The provider may put convention notes in `assumptions` (explainability); it cannot add a rule ID or an import to the allowlist.
+
+### Scaffold behavior (`generator.py`)
+
+1. Forward the stamped convention fields on `ProposalRequest`.
+2. After schema validation, scan proposed file contents with `ast`. If `libs.no-new-third-party` is active and a non-stdlib, non-first-party import is absent from `observed_imports`, fail the proposal with a boundary error and remediation ("reuse an import already in approved sources, or record a justified new dependency in the plan assumptions and re-plan").
+3. Do not fail the proposal for typing heuristics. Those remain advisory at `validate` so a correct functional patch is not discarded for `Optional` vs `|`.
+4. Still forbid paths outside the plan. Convention checks do not authorize extra files.
+
+### Validate and report
+
+`validate --tier fast` runs focused tests and, when configured, `project-pre-commit-changed-files`. That is what actually applies Ruff (`ruff-check --fix` / `ruff-format` in vLLM's `.pre-commit-config.yaml`). If pre-commit rewrites files, approval and validation become stale per the existing hook contract.
+
+The same `RULE_REGISTRY` runs as deterministic findings on changed files. `review` and `report` already surface `advisory` without a nonzero exit. Do not hide those findings when the run is otherwise ready.
+
+### Issue.md shape
+
+Keep ACs behavioral. Put convention intent in an unnumbered section, for example:
+
+```markdown
+## Conventions
+
+Follow nearby code and these repo rules:
+- Typing: PEP 604 unions (`X | None`), builtin generics (`list[int]`).
+- Libraries: reuse types already imported in the touched files; no new dependency.
+- Hints: Google-style docstrings on new public functions; line length 88.
+```
+
+### Out of scope for this extension
+
+- A `--tier lint` flag or a `contrib-pilot lint` command.
+- Running mypy/Ruff inside `plan` or `scaffold`.
+- Letting the assistant invent rule IDs, Ruff args, or package names from the web.
+- Promoting typing heuristics to blocking by default.
+- Auto-fixing imports or types; the human still reviews `proposal.diff`.
 
 ## Run Integrity, Ownership, and Staleness
 
@@ -302,12 +411,15 @@ CI uses the same executor and allowlisted check definitions.
 ### Phase 2: Convention Discovery and Validation
 
 - Discover relevant guidance and nearby patterns using targeted, allowlisted searches.
+- Treat `AGENTS.md`, `pyproject.toml`, and `.pre-commit-config.yaml` as optional convention sources when listed in `allowed_sources`.
 - Generate a file and test plan before proposing changes.
+- Stamp `applicable_rules`, `observed_imports`, and `lint_checks` on `ChangePlan` from config and AST inventory; never trust the provider to author those fields.
+- Pass those constraints into `scaffold` so the first diff prefers existing libraries, PEP 604 typing, and the repo's Ruff select set.
 - Reuse vLLM's existing commands and configuration rather than creating parallel standards.
 - Run the narrowest relevant pytest selection and pre-commit checks supported locally.
 - Provide a fast local tier and a fuller CI-oriented tier.
 - Identify accelerator, model-evaluation, distributed, or unavailable checks as CI-required without claiming local success.
-- Detect selected deprecated APIs and project anti-patterns.
+- Detect selected deprecated APIs and project anti-patterns, including the reviewed typing/library heuristics in `RULE_REGISTRY`.
 - Flag behavior changes without corresponding tests.
 - Assess assertion quality, positive/negative cases, minimal setup, and acceptance-criteria traceability as explainable heuristics, not proof of test quality.
 - Classify findings as blocking, advisory, or CI-required and include the evidence and remediation for each.
@@ -383,10 +495,13 @@ The artifact is complete when:
 - A unified diff is presented for review before explicit approval and application.
 - Concurrent user edits or changed base hashes prevent unsafe patch application.
 - The scaffold follows representative project conventions.
+- The plan records engine-stamped convention constraints (rule IDs, observed imports, lint check IDs) and the provider cannot add a rule or a new third-party import to that allowlist.
+- Scaffold refuses a proposed third-party import that is absent from `observed_imports` when `libs.no-new-third-party` is configured; typing hints remain advisory until `validate`.
 - A relevant test is proposed, or an explicit justification is required.
 - Focused pytest, pre-commit, and configured quality checks can be invoked through one command where supported.
 - A deliberately deprecated API or selected anti-pattern produces an evidence-backed finding.
 - Hard failures and advisory test-quality heuristics are clearly distinguished.
+- Package recommendations are closed-world (imports already present in approved sources); no PyPI or web lookup.
 - Prohibited context or paths are rejected and reported clearly.
 - Terminal and IDE-oriented workflows use the same engine and results.
 - `run` reaches the report on the happy path, resumes after interruption, and refuses non-interactive continuation without an exact bound approval.
@@ -420,6 +535,7 @@ No deep architecture deck is required. One compact workflow diagram is sufficien
 | Scaffold a correct first contribution | Targeted discovery, structured plan, reviewable patch, and test proposal | Run the sample contribution and compare it with captured nearby patterns |
 | Avoid reading the whole codebase | Allowlisted targeted discovery and consulted-source record | Inspect provenance and confirm bounded discovery |
 | Catch mistakes early | Required checks plus evidence-backed deprecated API and anti-pattern findings | Inject representative failures before review |
+| Follow typing, lint, and library conventions without extra ACs | Engine-stamped plan constraints, scaffold import recheck, Ruff via `validate` pre-commit | Plan lists `observed_imports`/`applicable_rules`; a new third-party import fails scaffold; Ruff `UP`/`I`/`F` run only at validate |
 | Strengthen tests | Acceptance mapping and explainable assertion/edge-case heuristics | Show missing-test and advisory weak-test findings |
 | Fit existing CI | Shared validation engine, fast/CI tiers, and explicit CI-only checks | Run local checks and inspect the CI handoff |
 | Enforce guardrails | Context and path allowlists with observable failures | Attempt a prohibited path |
@@ -437,6 +553,7 @@ No deep architecture deck is required. One compact workflow diagram is sufficien
 - **vLLM installation or hardware failure:** control with a pinned, representative offline fixture and explicit CI-only evidence.
 - **Unsafe generated edits:** control with dry-run diffs, base hashes, explicit approval, and refusal to overwrite user changes.
 - **Overclaiming heuristic quality checks:** label them advisory and show their evidence.
+- **Open-ended library suggestion:** recommend only imports already present in allowlisted sources; never query PyPI or the web.
 - **IDE-specific coupling:** keep the engine editor-agnostic and ship only thin task examples.
 - **Git-hook surprise or latency:** require explicit installation, preserve existing hook setups, keep checks fast/non-mutating, and rely on CI as authoritative.
 - **Hidden model dependency:** document generation boundaries and provide deterministic validation plus user-authored plan/patch inputs when model access is unavailable.

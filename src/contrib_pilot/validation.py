@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from contrib_pilot.config import CheckDefinition, Config
+from contrib_pilot.conventions import evaluate as evaluate_conventions
 from contrib_pilot.models import ChangePlan, CommandResult, Finding, Severity, ValidationReport
 
 MAX_OUTPUT_BYTES = 20_000
@@ -191,7 +192,6 @@ def deterministic_findings(config: Config, plan: ChangePlan, changed_files: list
 
     findings: list[Finding] = []
 
-    planned = {str(p) for p in (*plan.implementation_files, *plan.test_files)}
     for changed in changed_files:
         if not config.is_allowed_change_path(changed):
             findings.append(
@@ -215,6 +215,35 @@ def deterministic_findings(config: Config, plan: ChangePlan, changed_files: list
                 remediation="Add a focused test, or record an explicit justification in the plan.",
             )
         )
+
+    changed_contents: dict[str, str] = {}
+    for changed in changed_files:
+        resolved = config.repo_root / changed
+        if resolved.is_file() and str(changed).replace("\\", "/").endswith(".py"):
+            changed_contents[str(changed).replace("\\", "/")] = resolved.read_text(encoding="utf-8")
+
+    neighbor_contents: dict[str, str] = {}
+    for evidence in plan.sources:
+        posix = str(evidence.path).replace("\\", "/")
+        if not posix.endswith(".py"):
+            continue
+        resolved = config.repo_root / evidence.path
+        if resolved.is_file():
+            try:
+                neighbor_contents[posix] = resolved.read_text(encoding="utf-8")
+            except OSError:
+                continue
+
+    findings.extend(
+        evaluate_conventions(
+            applicable_rules=plan.applicable_rules,
+            observed_imports=plan.observed_imports,
+            first_party_prefixes=config.first_party_prefixes,
+            changed_contents=changed_contents,
+            neighbor_contents=neighbor_contents,
+            implementation_files=plan.implementation_files,
+        )
+    )
 
     return findings
 

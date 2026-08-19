@@ -55,6 +55,11 @@ class ChangePlan(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     ci_only_checks: list[str] = Field(default_factory=list)
     provider: str = "fixture"
+    # Engine-owned. Planner overwrites these after the provider returns.
+    applicable_rules: list[str] = Field(default_factory=list)
+    observed_imports: list[str] = Field(default_factory=list)
+    lint_checks: list[str] = Field(default_factory=list)
+    lint_policy_summary: str = ""
 
 
 class FileEdit(BaseModel):

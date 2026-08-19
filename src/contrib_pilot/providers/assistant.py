@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
+from contrib_pilot.conventions import ConventionConstraints, prompt_block
 from contrib_pilot.errors import MissingContextError
 from contrib_pilot.models import AcceptanceCriterion, ChangePlan, ProposedChange, ProposedFile
 from contrib_pilot.providers import PlanRequest, ProposalRequest
@@ -58,7 +59,8 @@ def _schema_system_prompt(role: str, schema_cls: type[BaseModel], extra: str) ->
         f"{role} Use only the provided sources. "
         "Output must be a single JSON object matching this JSON Schema exactly. "
         "Do not emit markdown fences, commentary, or engine-owned fields "
-        "(issue_path, base_commit, base_file_hashes, sources, provider). "
+        "(issue_path, base_commit, base_file_hashes, sources, provider, "
+        "applicable_rules, observed_imports, lint_checks, lint_policy_summary). "
         f"{extra}\n\nJSON Schema:\n{schema}"
     )
 
@@ -69,7 +71,9 @@ _PLAN_SYSTEM_PROMPT = _schema_system_prompt(
     "acceptance_criteria must be objects with id, text, and planned_tests "
     "(an array of file paths or pytest node ids), not plain strings. "
     "implementation_files and test_files must be repository-relative paths "
-    "taken from allowed_paths.",
+    "taken from allowed_paths. Follow the engine-authored convention constraints "
+    "in the user payload: reuse observed_imports, prefer PEP 604 unions and "
+    "builtin generics, and do not add third-party packages.",
 )
 
 _PROPOSAL_SYSTEM_PROMPT = _schema_system_prompt(
@@ -79,7 +83,9 @@ _PROPOSAL_SYSTEM_PROMPT = _schema_system_prompt(
     "For edit_paths: leave `content` null and set `edits` to unique old_string/new_string hunks "
     "copied from the provided source. Each old_string must occur exactly once in that file. "
     "New files always use complete `content`. Do not rewrite an edit_paths file in full. "
-    "Focused tests must use the standard library only: do not import vllm, torch, or GPU stacks.",
+    "Focused tests must use the standard library only: do not import vllm, torch, or GPU stacks. "
+    "Follow engine-authored convention constraints: reuse observed_imports; do not add "
+    "third-party packages; prefer X | None and list[T] over Optional/List.",
 )
 
 
@@ -300,11 +306,22 @@ class AssistantProvider:
                 ) from second_error
 
     def create_plan(self, request: PlanRequest) -> ChangePlan:
+        constraints = ConventionConstraints(
+            applicable_rules=list(request.applicable_rules),
+            observed_imports=list(request.observed_imports),
+            lint_checks=list(request.lint_checks),
+            lint_policy_summary=request.lint_policy_summary,
+        )
         payload = {
             "issue_text": request.issue_text,
             "acceptance_criteria_hint": request.acceptance_criteria_hint,
             "source_contents": request.source_contents,
             "allowed_paths": request.allowed_paths,
+            "convention_constraints": prompt_block(constraints),
+            "applicable_rules": request.applicable_rules,
+            "observed_imports": request.observed_imports,
+            "lint_checks": request.lint_checks,
+            "lint_policy_summary": request.lint_policy_summary,
         }
         draft = self._call_with_repair(
             _PLAN_SYSTEM_PROMPT, payload, DraftedChangePlan, activity="plan"
@@ -324,11 +341,18 @@ class AssistantProvider:
         )
 
     def create_proposal(self, request: ProposalRequest) -> ProposedChange:
+        constraints = ConventionConstraints(
+            applicable_rules=list(request.applicable_rules or request.plan.applicable_rules),
+            observed_imports=list(request.observed_imports or request.plan.observed_imports),
+            lint_checks=list(request.lint_checks or request.plan.lint_checks),
+            lint_policy_summary=request.lint_policy_summary or request.plan.lint_policy_summary,
+        )
         payload = {
             "plan": request.plan.model_dump(mode="json"),
             "source_contents": request.source_contents,
             "rewrite_paths": request.rewrite_paths,
             "edit_paths": request.edit_paths,
+            "convention_constraints": prompt_block(constraints),
         }
         draft = self._call_with_repair(
             _PROPOSAL_SYSTEM_PROMPT, payload, DraftedProposal, activity="scaffold proposal"

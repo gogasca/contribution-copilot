@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contrib_pilot.config import Config
 from contrib_pilot.context import read_approved
+from contrib_pilot.conventions import NO_NEW_THIRD_PARTY, assert_no_new_third_party
 from contrib_pilot.errors import BoundaryViolationError
 from contrib_pilot.models import ChangePlan, ProposedChange
 from contrib_pilot.patches import apply_edits
@@ -51,6 +52,10 @@ def build_proposal(
         source_contents=source_contents,
         rewrite_paths=rewrite_paths,
         edit_paths=edit_paths,
+        applicable_rules=list(plan.applicable_rules),
+        observed_imports=list(plan.observed_imports),
+        lint_checks=list(plan.lint_checks),
+        lint_policy_summary=plan.lint_policy_summary,
     )
     proposal = provider.create_proposal(request)
     return _revalidate(proposal, config, plan, source_contents)
@@ -84,6 +89,22 @@ def _revalidate(
     if not proposal.files:
         raise BoundaryViolationError(
             "Proposal contains no files", remediation="Re-plan or supply a manual patch."
+        )
+
+    if NO_NEW_THIRD_PARTY in plan.applicable_rules:
+        proposed_texts: dict[str, str] = {}
+        for proposed_file in proposal.files:
+            path_str = _posix(proposed_file.path)
+            if proposed_file.edits:
+                current = source_contents.get(path_str, "")
+                proposed_texts[path_str] = apply_edits(current, proposed_file.edits)
+            else:
+                proposed_texts[path_str] = proposed_file.content or ""
+        assert_no_new_third_party(
+            implementation_files=plan.implementation_files,
+            proposed_texts=proposed_texts,
+            observed_imports=plan.observed_imports,
+            first_party_prefixes=config.first_party_prefixes,
         )
 
     return proposal

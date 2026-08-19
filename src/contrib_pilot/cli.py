@@ -16,6 +16,7 @@ from rich.markdown import Markdown
 from contrib_pilot import commits, demo as demo_mod, generator, hooks as hooks_mod, orchestrator
 from contrib_pilot import patches, planner, reporting, review as review_mod, validation as validation_mod
 from contrib_pilot.config import Config, init_repo, load_config
+from contrib_pilot.conventions import CONVENTION_SOURCE_PURPOSES
 from contrib_pilot.errors import ContribPilotError
 from contrib_pilot.git import (
     base_commit,
@@ -38,11 +39,13 @@ CURRENT_RUN_ID = "current"
 def _source_purposes(config: Config) -> dict[str, str]:
     """Use exact (non-glob) allowed_sources as the planner's context set."""
 
-    return {
-        pattern: "approved source"
-        for pattern in config.allowed_sources
-        if not any(char in pattern for char in "*?[")
-    }
+    purposes: dict[str, str] = {}
+    for pattern in config.allowed_sources:
+        if any(char in pattern for char in "*?["):
+            continue
+        posix = pattern.replace("\\", "/")
+        purposes[pattern] = CONVENTION_SOURCE_PURPOSES.get(posix, "approved source")
+    return purposes
 
 
 def _resolve_repo(path: Path | None) -> Path:
@@ -154,6 +157,13 @@ def _plan_markdown(plan_obj: ChangePlan) -> str:
         "## Sources consulted",
         "",
         *[f"- `{s.path}` ({s.purpose}) sha256:{s.sha256[:12]}" for s in plan_obj.sources],
+        "",
+        "## Conventions",
+        "",
+        f"- Rules: {', '.join(plan_obj.applicable_rules) or 'none'}",
+        f"- Observed imports: {', '.join(plan_obj.observed_imports) or 'none'}",
+        f"- Lint checks: {', '.join(plan_obj.lint_checks) or 'none'}",
+        f"- Lint policy: {plan_obj.lint_policy_summary or 'none'}",
         "",
         "## CI-only checks",
         "",
