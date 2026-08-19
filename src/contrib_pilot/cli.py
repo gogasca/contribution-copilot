@@ -17,7 +17,12 @@ from contrib_pilot import commits, demo as demo_mod, generator, hooks as hooks_m
 from contrib_pilot import patches, planner, reporting, review as review_mod, validation as validation_mod
 from contrib_pilot.config import Config, init_repo, load_config
 from contrib_pilot.errors import ContribPilotError
-from contrib_pilot.git import base_commit, changed_paths, repo_root as git_repo_root, staged_paths
+from contrib_pilot.git import (
+    base_commit,
+    contribution_changed_paths,
+    repo_root as git_repo_root,
+    staged_paths,
+)
 from contrib_pilot.models import ChangePlan, ProposedChange, ReviewSummary, Severity, ValidationReport
 
 app = typer.Typer(add_completion=False, help="Contribution Copilot")
@@ -228,7 +233,7 @@ def validate(
     config = _load_config(repo)
     plan_obj = _load_plan(config)
     commit = base_ref or base_commit(repo)
-    changed = changed_paths(repo)
+    changed = contribution_changed_paths(repo, issue_path=plan_obj.issue_path)
 
     report = validation_mod.validate(
         config=config, plan=plan_obj, tier=tier, changed_files=changed, base_commit=commit
@@ -272,7 +277,7 @@ def review() -> None:
     )
 
     commit = base_commit(repo)
-    changed = changed_paths(repo)
+    changed = contribution_changed_paths(repo, issue_path=plan_obj.issue_path)
     summary = review_mod.build_review(
         plan=plan_obj, changed_files=changed, validation=validation_report, current_base_commit=commit
     )

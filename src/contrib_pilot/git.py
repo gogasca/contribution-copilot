@@ -62,6 +62,46 @@ def changed_paths(repo: Path) -> list[str]:
     return names
 
 
+def _repo_posix(repo: Path, path: Path | str) -> str:
+    """Normalize a path to repo-relative POSIX form for comparisons."""
+
+    candidate = Path(str(path))
+    try:
+        resolved = candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+        return resolved.relative_to(repo.resolve()).as_posix()
+    except (OSError, ValueError):
+        return candidate.as_posix().replace("\\", "/")
+
+
+def _is_non_contribution(posix: str, issue: str | None) -> bool:
+    if posix == ".contrib-pilot" or posix.startswith(".contrib-pilot/"):
+        return True
+    if posix == ".pytest_cache" or posix.startswith(".pytest_cache/"):
+        return True
+    if "__pycache__" in posix.split("/") or posix.endswith((".pyc", ".pyo")):
+        return True
+    return bool(issue and posix == issue)
+
+
+def contribution_changed_paths(
+    repo: Path, *, issue_path: Path | str | None = None
+) -> list[str]:
+    """Changed paths that are part of the contribution, not tool/run inputs.
+
+    ``.contrib-pilot/**``, the plan's issue file, and interpreter caches are
+    working inputs, not files the contribution is allowed to change.
+    """
+
+    issue = _repo_posix(repo, issue_path) if issue_path is not None else None
+    kept: list[str] = []
+    for path in changed_paths(repo):
+        posix = _repo_posix(repo, path)
+        if _is_non_contribution(posix, issue):
+            continue
+        kept.append(path)
+    return kept
+
+
 def staged_paths(repo: Path) -> list[str]:
     out = _run(["diff", "--cached", "--name-only"], cwd=repo)
     return [line for line in out.splitlines() if line]
