@@ -379,7 +379,16 @@ def run_cmd(
     resume: bool = typer.Option(False, "--resume"),
     run_id: str = typer.Option(None, "--run-id"),
     stop_after: str = typer.Option(None, "--stop-after"),
-    non_interactive: bool = typer.Option(False, "--non-interactive"),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Do not prompt. Pause instead of applying unless --auto-approve is also set",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--auto-approve",
+        help="Skip the apply prompt: record approval and write tracked files",
+    ),
 ) -> None:
     repo = _resolve_repo(None)
     config = _load_config(repo)
@@ -402,6 +411,7 @@ def run_cmd(
         confirm=_confirm,
         run_id=effective_run_id,
         non_interactive=non_interactive,
+        auto_approve=auto_approve,
         stop_after=stop_after,
     )
 

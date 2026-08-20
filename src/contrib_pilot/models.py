@@ -146,7 +146,7 @@ class ApprovalRecord(BaseModel):
     base_state_fingerprint: str
     approver: str
     timestamp: str
-    invocation_mode: str  # "interactive" | "non_interactive_replay"
+    invocation_mode: str  # "interactive" | "auto_approve" | "non_interactive_replay"
 
 
 class ScopeDriftEntry(BaseModel):

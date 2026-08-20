@@ -1,6 +1,6 @@
 # Contribution Copilot — Technical Design
 
-Implementation reference for the Python artifact. Business rationale lives in [plan.MD](plan.MD); critical journeys live in [CUJS.md](CUJS.md).
+Implementation reference for the Python artifact. Business rationale lives in [PLAN.MD](PLAN.MD); critical journeys live in [CUJS.md](CUJS.md).
 
 ## Scope and stack
 
@@ -8,7 +8,7 @@ Python 3.12 · `typer` · `pydantic` · `rich` · `pytest` · standard-library `
 
 No shell command strings, GitPython, web service, daemon, database, or IDE extension. The MVP supports UTF-8 regular-text file creation and replacement only. Deletes, renames, binary files, symlinks, submodules, and file-mode changes are rejected.
 
-The demo targets vLLM commit `e0e5a7fb2808504ba86c94f7b379e38496002fd0` and the representative task defined in `plan.MD`.
+The demo targets vLLM commit `e0e5a7fb2808504ba86c94f7b379e38496002fd0` and the representative task defined in `PLAN.MD`.
 
 ## Repository layout
 
@@ -17,7 +17,7 @@ The demo targets vLLM commit `e0e5a7fb2808504ba86c94f7b379e38496002fd0` and the 
 ├── pyproject.toml
 ├── uv.lock
 ├── README.md
-├── plan.MD
+├── PLAN.MD
 ├── CUJS.md
 ├── DESIGN.md
 ├── .gitignore
@@ -407,7 +407,7 @@ The FixtureProvider is the first implementation gate. One configured AssistantPr
 
 ## Convention constraints (plan and scaffold)
 
-Rationale is in plan.MD. This section is the implementation.
+Rationale is in PLAN.MD. This section is the implementation.
 
 Do not add a `lint` command or a third `--tier`. Do not run Ruff, mypy, or pip from `plan` or `scaffold`. Lint **execution** stays in `validate` via `CHECK_REGISTRY`. Plan/scaffold only **name** constraints so the first diff is already convention-shaped.
 

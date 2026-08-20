@@ -71,6 +71,63 @@ def test_full_flow_reaches_reported(demo_workspace: Path, expected_dir: Path) ->
     assert "tests/utils_/test_import_utils.py" in changed
 
 
+def test_run_auto_approve_applies_without_confirm(demo_workspace: Path, expected_dir: Path) -> None:
+    """`--auto-approve` records approval and continues; confirm() must not be called."""
+
+    config = load_config(demo_workspace)
+    provider = FixtureProvider(expected_dir=expected_dir)
+    issue_path = REPO_ROOT / "demo" / "issue.md"
+    source_purposes = {
+        "vllm/utils/import_utils.py": "implementation file under change",
+        "tests/utils_/test_import_utils.py": "nearest existing test module",
+    }
+
+    def _must_not_prompt(_msg: str) -> bool:
+        raise AssertionError("confirm must not be called when auto_approve=True")
+
+    result = orchestrator.run(
+        config=config,
+        issue_path=issue_path,
+        provider=provider,
+        source_purposes=source_purposes,
+        confirm=_must_not_prompt,
+        run_id="e2e-auto-approve",
+        auto_approve=True,
+    )
+
+    assert result.state.stage is Stage.REPORTED, result.reason
+    assert not result.paused
+    approval_path = Path(result.state.artifact_paths["approval"])
+    assert '"invocation_mode": "auto_approve"' in approval_path.read_text(encoding="utf-8")
+
+
+def test_run_non_interactive_without_auto_approve_pauses(demo_workspace: Path, expected_dir: Path) -> None:
+    config = load_config(demo_workspace)
+    provider = FixtureProvider(expected_dir=expected_dir)
+    issue_path = REPO_ROOT / "demo" / "issue.md"
+    source_purposes = {
+        "vllm/utils/import_utils.py": "implementation file under change",
+        "tests/utils_/test_import_utils.py": "nearest existing test module",
+    }
+
+    def _must_not_prompt(_msg: str) -> bool:
+        raise AssertionError("confirm must not be called when non_interactive=True")
+
+    result = orchestrator.run(
+        config=config,
+        issue_path=issue_path,
+        provider=provider,
+        source_purposes=source_purposes,
+        confirm=_must_not_prompt,
+        run_id="e2e-ni",
+        non_interactive=True,
+    )
+
+    assert result.paused
+    assert result.state.stage is Stage.PROPOSED
+    assert "non_interactive" in (result.reason or "")
+
+
 def test_pytest_actually_passes_after_apply(demo_workspace: Path, expected_dir: Path) -> None:
     """The fixture's own real pytest run must pass after the patch is applied."""
 

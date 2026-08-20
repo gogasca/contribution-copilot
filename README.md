@@ -33,7 +33,7 @@ uv run --project ../.. contrib-pilot run ../issue.md --provider fixture
 
 `--project ../..` tells `uv` to use this package while the cwd is the workspace.
 `run` is the one-shot orchestrator: plan → scaffold → validate → review → report.
-It pauses once for approval before writing tracked files; confirm `y`.
+It pauses once for approval before writing tracked files; confirm `y`, or pass `--auto-approve` to apply without prompting. `--non-interactive` never prompts and will not apply unless `--auto-approve` is also set.
 
 To reopen the report later, still from `demo/workspace`:
 
@@ -70,7 +70,7 @@ Run these in order, or use `run` to do them in one pass:
 | `validate` | Runs checks (tests). Does **not** ask whether the diff matches the plan. | `--tier fast\|ci` (default `fast`); `--format human\|json\|compiler`; `--base-ref` commit |
 | `review` | Asks whether the current diff still matches the plan. Does **not** re-run tests; uses the last `validate` result. | none |
 | `report` | Renders `report.md` / `report.json` from already-recorded plan, proposal, validation, and review. | `--provider fixture\|assistant` |
-| `run ISSUE` | One-shot: plan → scaffold → validate → review → report. Pauses once for approval before writing files. | `ISSUE`; `--provider fixture\|assistant`; `--resume`; `--run-id`; `--stop-after STAGE`; `--non-interactive` |
+| `run ISSUE` | One-shot: plan → scaffold → validate → review → report. Pauses once for approval before writing files unless `--auto-approve`. | `ISSUE`; `--provider fixture\|assistant`; `--auto-approve` skip confirm and apply; `--non-interactive` no prompt, pause unless `--auto-approve`; `--resume`; `--run-id`; `--stop-after STAGE` |
 
 `--tier fast` = local checks only (here: focused pytest). `--tier ci` = those plus CI-only checks (here: GPU integration stays `ci_required` with no GPU).
 
