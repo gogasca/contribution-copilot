@@ -7,11 +7,14 @@ argument parsing, output formatting, and exit codes (plan.MD "CLI mode").
 from __future__ import annotations
 
 import functools
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from contrib_pilot import commits, demo as demo_mod, generator, hooks as hooks_mod, orchestrator
 from contrib_pilot import patches, planner, reporting, review as review_mod, validation as validation_mod
@@ -34,6 +37,24 @@ console = Console()
 err_console = Console(stderr=True)
 
 CURRENT_RUN_ID = "current"
+_T = TypeVar("_T")
+
+
+def _with_spinner(description: str, work: Callable[[], _T]) -> _T:
+    """Show elapsed time while a long subprocess runs; stay quiet off-TTY."""
+
+    if not err_console.is_terminal:
+        err_console.print(f"[dim]{description}[/dim]")
+        return work()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description}"),
+        TimeElapsedColumn(),
+        console=err_console,
+        transient=True,
+    ) as progress:
+        progress.add_task(description, total=None)
+        return work()
 
 
 def _source_purposes(config: Config) -> dict[str, str]:
@@ -244,10 +265,17 @@ def validate(
     plan_obj = _load_plan(config)
     commit = base_ref or base_commit(repo)
     changed = contribution_changed_paths(repo, issue_path=plan_obj.issue_path)
+    check_ids = ", ".join(check.id for check in config.checks_for_tier(tier)) or "none"
 
-    report = validation_mod.validate(
-        config=config, plan=plan_obj, tier=tier, changed_files=changed, base_commit=commit
-    )
+    def _run() -> ValidationReport:
+        return validation_mod.validate(
+            config=config, plan=plan_obj, tier=tier, changed_files=changed, base_commit=commit
+        )
+
+    if format == "human":
+        report = _with_spinner(f"Running {tier} checks: {check_ids}…", _run)
+    else:
+        report = _run()
     run_dir = _run_dir(config)
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "validation.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
