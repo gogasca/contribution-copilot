@@ -79,6 +79,7 @@ def run(
     confirm: ConfirmFn,
     run_id: str | None = None,
     non_interactive: bool = False,
+    auto_approve: bool = False,
     stop_after: str | None = None,
 ) -> RunResult:
     commit = base_commit(config.repo_root)
@@ -151,16 +152,21 @@ def run(
     if _stop_here(Stage.PROPOSED):
         return RunResult(state=state, paused=True, next_action="review proposal.diff, then re-run")
 
-    # --- human approval + apply ---
+    # --- approval + apply ---
     if state.stage is Stage.PROPOSED:
-        if non_interactive:
+        if auto_approve:
+            approved = True
+            invocation_mode = "auto_approve"
+        elif non_interactive:
             return RunResult(
                 state=state,
                 paused=True,
-                reason="non_interactive requires a prior recorded approval",
-                next_action="Approve interactively once, or supply --run-id of an approved run.",
+                reason="non_interactive requires --auto-approve or a prior recorded approval",
+                next_action="Re-run with --auto-approve, approve interactively once, or supply --run-id of an approved run.",
             )
-        approved = confirm(f"Apply proposal touching {len(proposal.files)} file(s)?")
+        else:
+            approved = confirm(f"Apply proposal touching {len(proposal.files)} file(s)?")
+            invocation_mode = "interactive"
         if not approved:
             return RunResult(state=state, paused=True, reason="not approved", next_action="Edit and re-run, or reject.")
 
@@ -170,7 +176,7 @@ def run(
             base_state_fingerprint=_hash_text(json.dumps(plan.base_file_hashes, sort_keys=True)),
             approver="local-user",
             timestamp=datetime.now(UTC).isoformat(),
-            invocation_mode="interactive",
+            invocation_mode=invocation_mode,
         )
         approval_path = run_dir / "approval.json"
         _write_json(approval_path, approval.model_dump_json(indent=2))

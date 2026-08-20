@@ -27,6 +27,11 @@ def test_help_lists_all_top_level_commands() -> None:
     for group in ("hooks", "demo", "commit"):
         assert group in result.output
 
+    run_help = runner.invoke(app, ["run", "--help"])
+    assert run_help.exit_code == 0
+    assert "--auto-approve" in run_help.output
+    assert "--non-interactive" in run_help.output
+
 
 def test_doctor_runs_without_crashing(tmp_path: Path) -> None:
     result = runner.invoke(app, ["doctor"], catch_exceptions=False)
