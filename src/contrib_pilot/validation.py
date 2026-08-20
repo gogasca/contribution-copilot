@@ -9,6 +9,7 @@ registry key, never raw command text.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import signal
 import subprocess
@@ -65,15 +66,17 @@ CHECK_REGISTRY: dict[str, list[str]] = {
         "run",
         "--files",
     ],
-    # Generic default for examples/config.toml. Teams should replace this
-    # with a focused node-id command (see focused-import-utils-tests).
+    # Full-suite pytest. Needs the target project's test extra (conftest
+    # deps included). Prefer pytest-planned-tests unless that env exists.
     "pytest-fast": [
         "{python}",
         "-m",
         "pytest",
         "-q",
     ],
-    # Runs only the test files named in the current ChangePlan.
+    # Default for a real clone: only the plan's test files, and skip the
+    # target's conftest so missing extras (e.g. vLLM's tblib) do not fail
+    # collection before the focused tests run.
     "pytest-planned-tests": [
         "{python}",
         "-m",
@@ -85,31 +88,96 @@ CHECK_REGISTRY: dict[str, list[str]] = {
 }
 
 
-def _sanitized_env() -> dict[str, str]:
+def _sanitized_env(repo_root: Path | None = None) -> dict[str, str]:
     allowed = {key.upper() for key in _ALLOWED_ENV_KEYS}
     env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
     # Keep pytest from auto-loading third-party plugins (e.g. anyio) that are
     # installed into this interpreter but are unrelated to the focused tests.
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    if repo_root is not None:
+        src = repo_root / "src"
+        if src.is_dir():
+            # Prefer src/ over a same-named package at the repo root. Do not
+            # also put the root on PYTHONPATH or the two trees merge.
+            env["PYTHONPATH"] = str(src)
     return env
+
+
+def _unimportable_dash_m_module(command: list[str]) -> str | None:
+    """Return ``-m`` module name when the active interpreter cannot import it."""
+
+    try:
+        flag_at = command.index("-m")
+    except ValueError:
+        return None
+    if flag_at + 1 >= len(command):
+        return None
+    module = command[flag_at + 1]
+    if command[0] != sys.executable:
+        return None
+    if importlib.util.find_spec(module) is None:
+        return module
+    return None
+
+
+# `python -m pytest` puts cwd (the repo root) first on sys.path. For a src/
+# layout that shadows a same-named root package, replace `-m pytest` with a
+# bootstrap that drops the root and inserts src/.
+_PLANNED_TESTS_BOOTSTRAP = (
+    "import importlib,os,sys;"
+    "root=os.getcwd();"
+    "src=os.path.join(root,'src');"
+    "root_n=os.path.normcase(os.path.abspath(root));"
+    "sys.path[:]=[p for p in sys.path "
+    "if os.path.normcase(os.path.abspath(p if p else root))!=root_n];"
+    "sys.path.insert(0, src if os.path.isdir(src) else root);"
+    "[importlib.import_module(n) for n in "
+    "(os.listdir(src) if os.path.isdir(src) else []) "
+    "if os.path.isfile(os.path.join(src,n,'__init__.py'))];"
+    "raise SystemExit(__import__('pytest').main(sys.argv[1:]))"
+)
+
+
+def _append_pytest_runtime_args(
+    definition: str, resolved: list[str], repo_root: Path | None
+) -> None:
+    if definition != "pytest-planned-tests":
+        return
+    src_layout = repo_root is not None and (repo_root / "src").is_dir()
+    if src_layout:
+        try:
+            module_flag_at = resolved.index("-m")
+        except ValueError:
+            module_flag_at = -1
+        if (
+            module_flag_at != -1
+            and module_flag_at + 1 < len(resolved)
+            and resolved[module_flag_at + 1] == "pytest"
+        ):
+            resolved[module_flag_at : module_flag_at + 2] = ["-c", _PLANNED_TESTS_BOOTSTRAP]
+    if importlib.util.find_spec("pytest_asyncio") is not None:
+        resolved.extend(["-p", "pytest_asyncio.plugin"])
 
 
 def _resolve_command(
     check: CheckDefinition,
     changed_files: list[str],
     planned_tests: list[str] | None = None,
+    repo_root: Path | None = None,
 ) -> list[str]:
-    if check.definition is None:
+    definition = check.definition
+    if definition is None:
         raise ValueError(f"Check {check.id!r} has no local definition to run")
-    template = CHECK_REGISTRY.get(check.definition)
+    template = CHECK_REGISTRY.get(definition)
     if template is None:
-        raise ValueError(f"Unknown check definition: {check.definition!r}")
+        raise ValueError(f"Unknown check definition: {definition!r}")
     resolved: list[str] = []
     for arg in template:
         if arg == "{planned_tests}":
             resolved.extend(planned_tests or [])
             continue
         resolved.append(arg.replace("{python}", sys.executable))
+    _append_pytest_runtime_args(definition, resolved, repo_root)
     if check.append_changed_files:
         resolved.extend(changed_files)
     return resolved
@@ -140,14 +208,30 @@ def run_check(
             output_excerpt="No planned test files to run. Re-plan with a test file, or apply the proposal first.",
         )
 
-    command = _resolve_command(check, changed_files, planned_tests)
+    command = _resolve_command(check, changed_files, planned_tests, repo_root=config.repo_root)
+    missing_module = _unimportable_dash_m_module(command)
+    if missing_module is not None:
+        return CommandResult(
+            check_id=check.id,
+            command=command,
+            exit_code=None,
+            duration_seconds=0.0,
+            status=Severity.CI_REQUIRED,
+            output_excerpt=(
+                f"The active interpreter cannot import {missing_module!r}, so "
+                "this check cannot run locally. Install it into the environment "
+                "that runs contrib-pilot, or set the check's tier to \"ci\" with "
+                "ci_only = true."
+            ),
+        )
+
     start = time.monotonic()
     timed_out = False
     try:
         proc = subprocess.Popen(
             command,
             cwd=config.repo_root,
-            env=_sanitized_env(),
+            env=_sanitized_env(config.repo_root),
             shell=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

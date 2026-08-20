@@ -40,10 +40,14 @@ rules = [
 ]
 first_party_prefixes = []
 
+# pytest-planned-tests: only the plan's test files, with --noconftest so a
+# target conftest.py that needs extra deps (tblib, torch, …) does not fail
+# collection. Switch to pytest-fast only when this interpreter has the
+# project's full test extra installed.
 [[checks]]
 id = "focused-tests"
 tier = "fast"
-definition = "pytest-fast"
+definition = "pytest-planned-tests"
 timeout_seconds = 120
 
 [[checks]]

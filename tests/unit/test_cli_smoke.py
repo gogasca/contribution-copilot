@@ -44,7 +44,7 @@ def test_init_copies_example_config(tmp_path: Path) -> None:
     assert "examples/config.toml" in result.output
     copied = tmp_path / ".contrib-pilot" / "config.toml"
     assert copied.is_file()
-    assert "pytest-fast" in copied.read_text(encoding="utf-8")
+    assert "pytest-planned-tests" in copied.read_text(encoding="utf-8")
 
     again = runner.invoke(app, ["init", "--path", str(tmp_path)], catch_exceptions=False)
     assert again.exit_code == 0, again.output
