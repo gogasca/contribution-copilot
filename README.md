@@ -6,11 +6,11 @@ A repository-local CLI and shared engine that carries a new engineer's first con
 
 | Doc | Answers | Read for |
 |---|---|---|
-| [plan.MD](plan.MD) | Why build this, for whom, what's in/out of scope | Business priority, pinned demo definition, requirements traceability, risks, live walkthrough plan |
+| [PLAN.MD](PLAN.MD) | Why build this, for whom, what's in/out of scope | Business priority, pinned demo definition, requirements traceability, risks, live walkthrough plan |
 | [CUJS.md](CUJS.md) | How an engineer actually uses it | Critical user journeys (CUJ 1–9), the Developer Quickstart (clone → PR), the Python module/data-model spec, the demo script |
 | [DESIGN.md](DESIGN.md) | What to build, precisely | Concise technical reference — stack, module layout, pydantic models, state machine, generation boundary, safety mechanisms, exit codes |
 
-Suggested order: **plan.MD** for the case and constraints, then **CUJS.md** for how it behaves end to end, then **DESIGN.md** as the standing implementation reference while building.
+Suggested order: **PLAN.MD** for the case and constraints, then **CUJS.md** for how it behaves end to end, then **DESIGN.md** as the standing implementation reference while building.
 
 ## One-line architecture
 
@@ -64,7 +64,7 @@ Run these in order, or use `run` to do them in one pass:
 
 | Command | What it does | Flags / args |
 |---|---|---|
-| `plan ISSUE` | Writes a bounded plan only (`plan.json` / `plan.md`). No source files change. | `ISSUE` path to `issue.md`; `--provider fixture\|assistant` (default `fixture`); `--format human\|json` |
+| `plan ISSUE` | Writes a bounded plan only (`plan.json` / `PLAN.md`). No source files change. | `ISSUE` path to `issue.md`; `--provider fixture\|assistant` (default `fixture`); `--format human\|json` |
 | `scaffold --dry-run` | Writes `proposal.diff` from the plan. Still no tracked-file writes. | `--dry-run` (required vs `--apply`); `--provider fixture\|assistant` |
 | `scaffold --apply` | Applies that proposal after rechecking base hashes. | `--apply`; `--yes` skip the confirm prompt; `--provider` unused on apply (uses saved proposal) |
 | `validate` | Runs checks (tests). Does **not** ask whether the diff matches the plan. | `--tier fast\|ci` (default `fast`); `--format human\|json\|compiler`; `--base-ref` commit |
