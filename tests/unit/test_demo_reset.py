@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from contrib_pilot.demo import WORKSPACE_MARKER, docs_repo_root, reset
+from contrib_pilot.demo import WORKSPACE_MARKER, docs_repo_root, reset, run_doctor
 from contrib_pilot.errors import InvalidInputError
 
 
@@ -60,6 +60,32 @@ def test_reset_removes_readonly_empty_run_dir(demo_dir: Path) -> None:
     os.chmod(current, stat.S_IREAD)
     reset(demo_dir)
     assert (demo_dir / "workspace" / "pkg" / "a.py").read_text() == "x = 1\n"
+
+
+def test_doctor_skips_demo_checks_on_customer_clone(tmp_path: Path) -> None:
+    (tmp_path / ".contrib-pilot").mkdir()
+    (tmp_path / ".contrib-pilot" / "config.toml").write_text("schema_version = \"1\"\n", encoding="utf-8")
+    names = {check.name: check for check in run_doctor(tmp_path)}
+    assert "demo-fixture-config" not in names
+    assert "fixture-manifest" not in names
+    assert names["config"].ok
+
+
+def test_doctor_fails_missing_config_on_customer_clone(tmp_path: Path) -> None:
+    config = next(check for check in run_doctor(tmp_path) if check.name == "config")
+    assert not config.ok
+    assert "init" in config.detail
+
+
+def test_doctor_checks_demo_files_in_package_checkout(tmp_path: Path) -> None:
+    fixture_config = tmp_path / "demo" / "fixture" / ".contrib-pilot" / "config.toml"
+    fixture_config.parent.mkdir(parents=True)
+    fixture_config.write_text("schema_version = \"1\"\n", encoding="utf-8")
+    (tmp_path / "demo" / "fixture-manifest.json").write_text("{}", encoding="utf-8")
+    names = {check.name: check for check in run_doctor(tmp_path)}
+    assert names["demo-fixture-config"].ok
+    assert names["fixture-manifest"].ok
+    assert names["config"].ok
 
 
 def test_docs_repo_root_climbs_out_of_nested_workspace(tmp_path: Path) -> None:

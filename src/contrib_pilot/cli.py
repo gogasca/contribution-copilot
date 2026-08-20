@@ -512,7 +512,7 @@ def demo_reset() -> None:
 @app.command()
 @_handle_errors
 def doctor() -> None:
-    """Check setup. Safe to run from the repo root or from demo/workspace."""
+    """Check setup. Safe from the package root, demo/workspace, or a clone after init."""
 
     repo = demo_mod.docs_repo_root(Path.cwd())
     checks = demo_mod.run_doctor(repo)
