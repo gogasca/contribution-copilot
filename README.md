@@ -52,7 +52,7 @@ Setup prefix from the repo root: `uv run contrib-pilot …`
 
 | Command | What it does | Flags |
 |---|---|---|
-| `doctor` | Checks Python, Git, fixture config, and the demo manifest. Does not change files. | none |
+| `doctor` | Checks Python, Git, and local config. Fixture/manifest checks run only in this package checkout. Does not change files. | none |
 | `demo reset` | Recreates `demo/workspace/` from `demo/fixture/`. | none |
 | `init` | Copies `examples/config.toml` if the target has no policy, then creates the ignored run directory. Used on a real clone, not required for the bundled demo. | `--path` repo (default: cwd) |
 

@@ -34,9 +34,15 @@ def docs_repo_root(start: Path) -> Path:
 
     current = start.resolve()
     for candidate in (current, *current.parents):
-        if (candidate / "demo" / "fixture-manifest.json").is_file():
+        if _is_package_checkout(candidate):
             return candidate
     return current
+
+
+def _is_package_checkout(repo_root: Path) -> bool:
+    """True when ``repo_root`` is the contrib-pilot source checkout, not a customer clone."""
+
+    return (repo_root / "demo" / "fixture-manifest.json").is_file()
 
 
 @dataclass
@@ -178,35 +184,46 @@ def run_doctor(repo_root: Path) -> list[DoctorCheck]:
     git_result = subprocess.run(["git", "--version"], capture_output=True, text=True, timeout=5)
     checks.append(DoctorCheck(name="git", ok=git_result.returncode == 0, detail=git_result.stdout.strip()))
 
-    fixture_config = repo_root / "demo" / "fixture" / ".contrib-pilot" / "config.toml"
-    checks.append(
-        DoctorCheck(
-            name="demo-fixture-config",
-            ok=fixture_config.is_file(),
-            detail=str(fixture_config) if fixture_config.is_file() else f"not found: {fixture_config}",
+    package_checkout = _is_package_checkout(repo_root)
+    if package_checkout:
+        fixture_config = repo_root / "demo" / "fixture" / ".contrib-pilot" / "config.toml"
+        checks.append(
+            DoctorCheck(
+                name="demo-fixture-config",
+                ok=fixture_config.is_file(),
+                detail=str(fixture_config) if fixture_config.is_file() else f"not found: {fixture_config}",
+            )
         )
-    )
 
     try:
         find_config(repo_root)
         checks.append(DoctorCheck(name="config", ok=True, detail="found .contrib-pilot/config.toml"))
     except InvalidInputError:
-        checks.append(
-            DoctorCheck(
-                name="config",
-                ok=True,
-                detail="no top-level config (expected — run from demo/workspace after `demo reset`)",
+        if package_checkout:
+            checks.append(
+                DoctorCheck(
+                    name="config",
+                    ok=True,
+                    detail="no top-level config (expected — run from demo/workspace after `demo reset`)",
+                )
             )
-        )
+        else:
+            checks.append(
+                DoctorCheck(
+                    name="config",
+                    ok=False,
+                    detail="not found — run `contrib-pilot init` from the repository root",
+                )
+            )
 
-    manifest_path = repo_root / "demo" / "fixture-manifest.json"
-    if manifest_path.is_file():
+    if package_checkout:
+        manifest_path = repo_root / "demo" / "fixture-manifest.json"
         try:
             json.loads(manifest_path.read_text())
             checks.append(DoctorCheck(name="fixture-manifest", ok=True, detail="valid JSON"))
         except json.JSONDecodeError as exc:
             checks.append(DoctorCheck(name="fixture-manifest", ok=False, detail=str(exc)))
-    else:
-        checks.append(DoctorCheck(name="fixture-manifest", ok=False, detail="not found"))
+        except OSError:
+            checks.append(DoctorCheck(name="fixture-manifest", ok=False, detail="not found"))
 
     return checks
